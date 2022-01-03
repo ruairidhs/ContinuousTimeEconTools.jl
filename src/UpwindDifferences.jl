@@ -20,28 +20,33 @@ Edge cases:
     - Non standard indexing? Enforce LinRange
     - Small n? 
 =#
+"""Contains the optimal reward vector, `R`, and forward and backward drift, `GF` and `GB`."""
+struct UpwindResult{T <: Number}
+    R::Vector{T}
+    GF::Vector{T}
+    GB::Vector{T}
+end
 
+"""Compute the forward difference of vector `v` at index i"""
 function diff(v, dx, i)
     return (v[i+1] - v[i]) / dx
 end
 
-function diff!(dv, v, dx, n)
-    for i in 2:n
-        dv[i-1] = (v[i] - v[i-1]) / dx
-    end
-    return dv
-end
+"""
+    upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
 
-function updatepolicy!(bs, x, dv, n, policy) 
-    bf, bb = bs
-    for i in 1:n-1
-        bf[i] = policy(x[i], dv[i])
-        bb[i] = policy(x[i+1], dv[i])
-    end
-    return bs
-end
+Update `UR` using upwind finite differences based on discretized value function `v`.
 
-function upwind!(R, GF, GB, v, xs, reward, drift, policy, zerodrift)
+# Arguments
+- `xs::LinRange`: the statespace at which the value function `v` is evaluated.
+- `reward(x, c)` 
+- `drift(x, c)`
+- `policy(x, ∂vₓ)`: optimal control
+- `zerodrift(x)`: returns control which results in zero drift
+"""
+function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
+
+    R, GF, GB = UR.R, UR.GF, UR.GB
     dx = step(xs)
     n  = length(xs)
     z  = zero(eltype(GB))
@@ -79,7 +84,7 @@ function upwind!(R, GF, GB, v, xs, reward, drift, policy, zerodrift)
     end
     GF[end] = z
 
-    return R, GF, GB
+    return UR
 end
 
 function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
@@ -126,78 +131,7 @@ function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
     return R, GF, GB
 end
 
-function upwind!(R, GF, GB, bs, dv, v, x, reward, drift, policy, zerodrift)
-    bf, bb = bs
-    dx = step(x)
-    n = length(x) 
 
-    diff!(dv, v, dx, n)
-    updatepolicy!(bs, x, dv, n, policy)
-
-    gf = drift(x[1], bf[1])
-    if gf > zero(eltype(GF))
-        R[1] = reward(x[1], bf[1])
-        GF[1] = gf
-    else
-        R[1] = reward(x[1], zerodrift(x[1]))
-        GF[1] = zero(eltype(GF))
-    end
-    GB[1] = zero(eltype(GB))
-
-    for i in 2:n-1
-        R[i], GF[i], GB[i] = get_interior_upwind(x[i], dv[i], dv[i-1], reward, drift, policy, zerodrift)
-        #=
-        gf = drift(x[i], bf[i])
-        gb = drift(x[i], bb[i-1])
-        if gf > 0 && gb ≥ 0
-            R[i] = reward(x[i], bf[i])
-            GF[i] = gf
-            GB[i] = zero(eltype(GB))
-        elseif gb < 0 && gf ≤ 0
-            R[i] = reward(x[i], bb[i-1])
-            GF[i] = zero(eltype(GF))
-            GB[i] = gb
-        elseif gf ≤ 0 && gb ≥ 0
-            R[i] = reward(x[i], zerodrift(x[i]))
-            GF[i] = zero(eltype(GF))
-            GB[i] = zero(eltype(GB))
-        else
-            rf = reward(x[i], bf[i])
-            Hf = rf + dv[i] * gf
-            rb = reward(x[i], bb[i-1])
-            Hb = rb + dv[i-1] * gb
-            H0 = reward(x[i], zerodrift(x[i]))
-
-            if Hf > max(Hb, H0)
-                R[i] = rf
-                GF[i] = gf
-                GB[i] = zero(eltype(GB))
-            elseif Hb > H0
-                R[i] = rb
-                GF[i] = zero(eltype(GF))
-                GB[i] = gb
-            else
-                R[i] = H0
-                GF[i] = zero(eltype(GF))
-                GB[i] = zero(eltype(GB))
-            end
-        end
-        =#
-    end
-    
-    gb = drift(x[end], bb[end])
-    if gb < 0.0
-        R[end] = reward(x[end], bb[end])
-        GB[end] = gb
-    else
-        R[end] = reward(x[end], zerodrift(x[end]))
-        GB[end] = zero(eltype(GB))
-    end
-    GF[end] = zero(eltype(GF))
-
-    return R, GF, GB
-end
-
-export upwind!
+export UpwindResult, upwind!
 
 end # module

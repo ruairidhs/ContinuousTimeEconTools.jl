@@ -16,14 +16,14 @@ function evaluateparameters(ps)
     zerodrift(x) = r * x + y
 
     R, GF, GB = zeros(1000), zeros(1000), zeros(1000)
+    UR = UpwindResult(R, GF, GB)
     bs = (zeros(1000-1), zeros(1000-1))
     dv = zeros(1000-1)
 
     function backwardsiterate!(v0, v1)
-        #upwind!(R, GF, GB, bs, dv, v1, xs, reward, drift, policy, zerodrift)
-        upwind!(R, GF, GB, v1, xs, reward, drift, policy, zerodrift)
-        A = sparse(Tridiagonal(-GB[2:end] ./ step(xs), (GB .- GF) ./ step(xs), GF[1:end-1] ./ step(xs)))
-        v0 .= ((ρ + 1.0 / dt) * I - A) \ (R .+ v1 ./ dt)
+        upwind!(UR, v1, xs, reward, drift, policy, zerodrift)
+        A = sparse(Tridiagonal(-UR.GB[2:end] ./ step(xs), (UR.GB .- UR.GF) ./ step(xs), UR.GF[1:end-1] ./ step(xs)))
+        v0 .= ((ρ + 1.0 / dt) * I - A) \ (UR.R .+ v1 ./ dt)
         return v0
     end
 
