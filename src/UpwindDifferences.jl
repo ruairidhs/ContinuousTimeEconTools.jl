@@ -1,3 +1,8 @@
+"""
+    UpwindDifferences
+
+Implements a finite differences method based on an upwind scheme to solve Hamilton-Jacobi-Bellman (HJB) equations.
+"""
 module UpwindDifferences
 
 #=
@@ -20,6 +25,7 @@ Edge cases:
     - Non standard indexing? Enforce LinRange
     - Small n? 
 =#
+
 """Contains the optimal reward vector, `R`, and forward and backward drift, `GF` and `GB`."""
 struct UpwindResult{T <: Number}
     R::Vector{T}
@@ -37,12 +43,8 @@ end
 
 Update `UR` using upwind finite differences based on discretized value function `v`.
 
-# Arguments
-- `xs::LinRange`: the statespace at which the value function `v` is evaluated.
-- `reward(x, c)` 
-- `drift(x, c)`
-- `policy(x, ∂vₓ)`: optimal control
-- `zerodrift(x)`: returns control which results in zero drift
+See [`upwind`](@ref) for further details.
+`UR` contains 3 vectors: (R) the optimal reward; (GF) the optimal drift when non-negative; (GB) the optimal drift when non-positive.
 """
 function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
 
@@ -84,6 +86,30 @@ function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
     end
     GF[end] = z
 
+    return UR
+end
+
+"""
+    upwind(v::Vector, xs::LinRange, reward, drift, policy, zerodrift) 
+    
+Compute the optimal reward, and forward and backward drift, based on value function `v` using an upwind differences scheme.
+
+This function can be used when an upwind finite differences approximation of the value function derivative is required to compute an optimal control solution.
+As the resulting drift is required to compute the upwind approximation, it is also returned.
+
+See also [`upwind!`](@ref) for an efficient inplace version.
+
+# Arguments
+- `v::Vector`: the discretized value function from which the result will be computed.
+- `xs::LinRange`: the (one-dimensional) discretized state-space at which `v` is evaluated.
+- `reward(x, c)::Function`: returns the flow reward given state value `x` and control value `c`.
+- `drift(x, c)::Function`: returns the drift in the state given current state value `x` and control value `v`.
+- `policy(x, dv)::Function`: returns the optimal control value given current state value `x` and value function derivative `dv`.
+- zerodrift(x)::Function`: returns the control value which results in zero drift, i.e, `drift(x, zerodrift(x)) = 0`.
+"""
+function upwind(v, xs, reward, drift, policy, zerodrift)
+    UR = UpwindResult(similar(v), similar(v), similar(v))
+    upwind!(UR, v, xs, reward, drift, policy, zerodrift)
     return UR
 end
 
