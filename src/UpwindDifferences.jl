@@ -158,6 +158,6 @@ function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
 end
 
 
-export UpwindResult, upwind!
+export UpwindResult, upwind!, upwind
 
 end # module
