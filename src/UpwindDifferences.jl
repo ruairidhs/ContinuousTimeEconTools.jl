@@ -1,3 +1,38 @@
+# >>> NEW <<<
+# what do I need to produce?
+# (1): a reward vector
+# (2): the A matrix
+
+    # is there a way to do this with simd?
+    # say you have a vector function: policyv(xs, dvs_forward) 
+    # forward_drift = driftv(xs, policyv(xs, dvs_forward))
+    # backward_drift = driftv(xs, policyv(xs, dvs_backward))
+
+    # I need to keep the policies!!
+    # can this potentially be done with static arrays?
+    # high compile time but low run time?
+
+    # in general this needs to be incorporated into a larger matrix
+
+    #=
+    policy_f = policyv(xs, dv_f)
+    policy_b = policyv(xs, dv_b)
+    drift_f = driftv(xs, policy_f)
+    drift_b = driftv(xs, policy_b)
+
+    use_forward = (drift_f .> 0) .* (drift_b .>= 0)
+    use_backward = (drift_f .<= 0) .* (drift_b .< 0)
+    use_stationary = .!(use_forward .| use_backward)
+    # if neither of these is true, then we stay static
+    # so this is good except for convex value functions
+    upwind_policy = use_forward .* policy_f + use_backward .* policy_b + use_stationary .* zerodrift(xs)
+    R = rewardv(xs, upwind_policy)
+    =#
+
+
+
+
+# >>> OLD <<<
 """
     UpwindDifferences
 
@@ -121,19 +156,19 @@ function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
     gb = drift(x, bb)
     z = zero(typeof(gf)) 
 
-    if gf > 0 && gb ≥ 0 
-        R = reward(x, bf)
+    if gf > 0 && gb ≥ 0 # forward difference
+        R = reward(x, bf) 
         GF = gf
         GB = z
-    elseif gb < 0 && gf ≤ 0
+    elseif gb < 0 && gf ≤ 0 # backward difference
         R = reward(x, bb)
         GF = z
         GB = gb
-    elseif gf ≤ 0 && gb ≥ 0
+    elseif gf ≤ 0 && gb ≥ 0 # zero change
         R = reward(x, zerodrift(x))
         GF = z
         GB = z
-    else
+    else # convex value function
         rf = reward(x, bf)
         Hf = rf + dvf * gf
         rb = reward(x, bb)
