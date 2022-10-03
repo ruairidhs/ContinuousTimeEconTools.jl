@@ -1,44 +1,11 @@
-# >>> NEW <<<
-# what do I need to produce?
-# (1): a reward vector
-# (2): the A matrix
-
-    # is there a way to do this with simd?
-    # say you have a vector function: policyv(xs, dvs_forward) 
-    # forward_drift = driftv(xs, policyv(xs, dvs_forward))
-    # backward_drift = driftv(xs, policyv(xs, dvs_backward))
-
-    # I need to keep the policies!!
-    # can this potentially be done with static arrays?
-    # high compile time but low run time?
-
-    # in general this needs to be incorporated into a larger matrix
-
-    #=
-    policy_f = policyv(xs, dv_f)
-    policy_b = policyv(xs, dv_b)
-    drift_f = driftv(xs, policy_f)
-    drift_b = driftv(xs, policy_b)
-
-    use_forward = (drift_f .> 0) .* (drift_b .>= 0)
-    use_backward = (drift_f .<= 0) .* (drift_b .< 0)
-    use_stationary = .!(use_forward .| use_backward)
-    # if neither of these is true, then we stay static
-    # so this is good except for convex value functions
-    upwind_policy = use_forward .* policy_f + use_backward .* policy_b + use_stationary .* zerodrift(xs)
-    R = rewardv(xs, upwind_policy)
-    =#
-
-
-
-
-# >>> OLD <<<
 """
     UpwindDifferences
 
 Implements a finite differences method based on an upwind scheme to solve Hamilton-Jacobi-Bellman (HJB) equations.
 """
 module UpwindDifferences
+
+import LinearAlgebra: diagind, Tridiagonal
 
 #=
 Problem:
@@ -48,17 +15,6 @@ Problem:
             ẋ(x̅, c) ≤ 0
 
 Let b(x, ∂v) = argmax_c {r(x, c) + ∂vₓ(x)g(x, c)}
-
-This problem can be efficient solved without the use of a cache.
-However the cached implementation allows for vectorization.
-
-Inputs:
-    1. x -> a one-dimensional state grid, assumed to be evenly spaced, i.e. a LinRange
-    2. n -> x.len
-
-Edge cases:
-    - Non standard indexing? Enforce LinRange
-    - Small n? 
 =#
 
 """Contains the optimal reward vector, `R`, and forward and backward drift, `GF` and `GB`."""
@@ -68,8 +24,33 @@ struct UpwindResult{T <: Number}
     GB::Vector{T}
 end
 
+UpwindResult(v::AbstractVector) = UpwindResult(map(v -> zeros(eltype(v), length(v)), (v,v,v))...)
+
+"""
+    policy_matrix!(A, UR::UpwindResult)
+
+Update tridiagonal band of `A` to the Poisson transition matrix implied by the drifts in `UR`.
+"""
+function policy_matrix!(A, UR::UpwindResult)
+    A[diagind(A, -1)] .= .-@view(UR.GB[2:end]) 
+    A[diagind(A, 0)]  .= UR.GB .- UR.GF
+    A[diagind(A, 1)]  .= @view(UR.GF[1:end-1])
+    return A
+end
+
+"""
+    policy_matrix!(A, UR::UpwindResult)
+
+Return a tridiagonal matrix representation of the Poisson transition matrix implied by the drifts in `UR`.
+"""
+function policy_matrix(UR::UpwindResult)
+    n = length(UR.R)
+    A = Tridiagonal(map(zeros, (n-1, n, n-1))...)
+    return policy_matrix!(A, UR)
+end
+
 """Compute the forward difference of vector `v` at index i"""
-function diff(v, dx, i)
+function fdiff(v, dx, i)
     return (v[i+1] - v[i]) / dx
 end
 
@@ -83,13 +64,17 @@ See [`upwind`](@ref) for further details.
 """
 function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
 
+    Base.require_one_based_indexing(v, xs)
+
     R, GF, GB = UR.R, UR.GF, UR.GB
-    dx = step(xs)
     n  = length(xs)
+    n >= 3 || throw(ArgumentError("state space must be larger than 3 points"))
+    n == length(v) || throw(ArgumentError("length of value function must equal length of state-space"))
     z  = zero(eltype(GB))
 
     # Lower state constraint
-    dvf = diff(v, dx, 1)
+    dxf = xs[2] - xs[1]
+    dvf = fdiff(v, dxf, 1)
     bf = policy(xs[1], dvf)
     gf = drift(xs[1], bf)
     if gf > z
@@ -104,12 +89,13 @@ function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
     # State interior
     for i in 2:n-1
         dvb = dvf
-        dvf = diff(v, dx, i)
+        dxf = xs[i+1] - xs[i]
+        dvf = fdiff(v, dxf, i)
         R[i], GF[i], GB[i] = get_interior_upwind(xs[i], dvf, dvb, reward, drift, policy, zerodrift)
     end
 
     # Upper state constraint
-    dvb = diff(v, dx, n-1)
+    dvb = fdiff(v, dxf, n-1)
     bb = policy(xs[end], dvb)
     gb = drift(xs[end], bb)
     if gb < z
@@ -120,6 +106,16 @@ function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
         GB[end] = z
     end
     GF[end] = z
+
+    # finally, scale the forward and backward drifts by the xsteps
+    dx = xs[2] - xs[1]
+    GF[1] /= dx
+    for i in 2:n-1
+        GB[i] /= dx
+        dx = xs[i+1] - xs[i]
+        GF[i] /= dx
+    end
+    GB[n] /= dx
 
     return UR
 end
@@ -143,7 +139,7 @@ See also [`upwind!`](@ref) for an efficient inplace version.
 - zerodrift(x)::Function`: returns the control value which results in zero drift, i.e, `drift(x, zerodrift(x)) = 0`.
 """
 function upwind(v, xs, reward, drift, policy, zerodrift)
-    UR = UpwindResult(similar(v), similar(v), similar(v))
+    UR = UpwindResult(v)
     upwind!(UR, v, xs, reward, drift, policy, zerodrift)
     return UR
 end
@@ -192,7 +188,8 @@ function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
     return R, GF, GB
 end
 
-
-export UpwindResult, upwind!, upwind
+export UpwindResult, 
+       upwind!, upwind,
+       policy_matrix, policy_matrix!
 
 end # module

@@ -1,56 +1,72 @@
 using UpwindDifferences
-using Test
+using Test,
+      LinearAlgebra,
+      SparseArrays
 
-using SparseArrays
-using LinearAlgebra
-using DelimitedFiles
-using ProgressMeter
+@testset "Exponential utility" begin
+    θ, y, ρ = 2.0, 1.0, 0.05
+    reward(x, c) = -(1/θ) * exp(-θ * c)
+    drift(x, c) = y - c
+    policy(x, dv) = -(1/θ) * log(dv)
+    zerodrift(x) = y
 
-function evaluateparameters(ps)
-    θ, ρ, r, y, dt = ps[1], ps[2], ps[3], ps[4], ps[5]
-    xs = LinRange(0.01, 10.0, 1000)
-
-    reward(x, c) = c ^ (1.0 - θ) / (1.0 - θ) 
-    drift(x, c) = r * x + y - c
-    policy(x, dv) = dv ^ (-1.0 / θ)
-    zerodrift(x) = r * x + y
-
-    R, GF, GB = zeros(1000), zeros(1000), zeros(1000)
-    UR = UpwindResult(R, GF, GB)
-    bs = (zeros(1000-1), zeros(1000-1))
-    dv = zeros(1000-1)
-
-    function backwardsiterate!(v0, v1)
+    function backwards_iterate!(v0, v1, dt, A, UR, xs)
         upwind!(UR, v1, xs, reward, drift, policy, zerodrift)
-        A = sparse(Tridiagonal(-UR.GB[2:end] ./ step(xs), (UR.GB .- UR.GF) ./ step(xs), UR.GF[1:end-1] ./ step(xs)))
-        v0 .= ((ρ + 1.0 / dt) * I - A) \ (UR.R .+ v1 ./ dt)
+        policy_matrix!(A, UR)
+        v0 .= ((ρ + 1 / dt) * I - A) \ (UR.R .+ v1 ./ dt)
         return v0
     end
 
-    vinit = map(x -> reward(x, zerodrift(x)) ./ ρ, xs)
-    vs = (copy(vinit), copy(vinit))
-    tol, maxiter = 1e-10, 10000
-    err = tol
-    for iter in 1:maxiter
-        backwardsiterate!(vs[2], vs[1])
-        err = maximum(abs.(vs[2] .- vs[1]))
-        if err < tol
-            return (value = vs[2], iter = iter, err = err, termination = :tolerance) 
-        else
-            vs[1] .= vs[2]
+    function vf_fixed_point(xs)
+        n = length(xs)
+        v0 = @. (1/ρ) * log(xs + 1.0)
+        UR = UpwindResult(v0)
+        A = sparse(Tridiagonal(zeros(n-1), zeros(n), zeros(n-1)))
+
+        cache = copy(v0)
+        err = 1.0
+        iter = 1
+        dt = 0.1
+        while iter <= 20
+            backwards_iterate!(cache, v0, dt, A, UR, xs)
+            err = maximum(abs.(cache .- v0))
+            v0 .= cache
+            iter += 1
         end
+        dt = 10.0
+        err = 1.0
+        iter = 1
+        while iter <= 250 && err >= 1e-12
+            backwards_iterate!(cache, v0, dt, A, UR, xs)
+            err = maximum(abs.(cache .- v0))
+            v0 .= cache
+            iter += 1
+        end
+        return v0
     end
-    return (value = vs[1], iter = maxiter, err = err, termination = :iterations)
-end
 
-@testset "UpwindDifferences.jl" begin
-
-    allparameters = readdlm("testdata/hjb_parameters.tsv")
-    allvalues = readdlm("testdata/hjb_values.tsv")
-    @showprogress for i in axes(allparameters, 1)
-        ps = allparameters[i, :]
-        vnew = evaluateparameters(ps).value
-        vold = allvalues[i, :]
-        @test maximum(abs.(vnew .- vold)) < 1e-8
+    # use a non-regular grid for testing
+    xs = zeros(10000)
+    xs[2] = 0.0001
+    γ = (40.0 / xs[2]) ^ (1 / (length(xs)-1))
+    for i in 3:length(xs)
+        xs[i] = xs[i-1] * γ
     end
+
+    v = vf_fixed_point(xs)
+    function get_numeric_policy(v, xs)
+        n = length(xs)
+        dvs = zeros(n)
+        for i in eachindex(dvs)
+            (i == 1 || i == n) && continue
+            dvs[i] = (v[i+1] - v[i-1]) / (xs[i+1] - xs[i-1])
+        end
+        return [policy(x, dv) for (x, dv) in zip(xs[2:n-1], dvs[2:n-1])]
+    end
+
+    function get_analytic_policy(xs)
+        return y .+ sqrt.(2 * (ρ / θ) * xs) 
+    end
+    rel_errs = get_numeric_policy(v, xs) ./ get_analytic_policy(xs)[2:end-1] .- 1
+    @test maximum(abs.(rel_errs)) <= 0.001
 end
