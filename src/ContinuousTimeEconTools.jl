@@ -19,10 +19,13 @@ Let b(x, ∂v) = argmax_c {r(x, c) + ∂vₓ(x)g(x, c)}
 
 include("upwind.jl")
 include("HJB.jl")
+include("utils.jl")
 
 export UpwindResult, 
        upwind!, upwind,
        policy_matrix, policy_matrix!,
+       extract_drift, extract_drift!,
+       fixedpoint,
        iterateHJB!, iterateHJBVI!
 
 end # module

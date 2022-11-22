@@ -64,3 +64,17 @@ function policy_matrix(UR::UpwindResult)
     A = Tridiagonal(map(zeros, (n-1, n, n-1))...)
     return policy_matrix!(A, UR)
 end
+
+function extract_drift!(drifts, A, xs)
+    length(drifts) == length(xs) || throw(ArgumentError("lengths of drifts and xs do not match"))
+    dx = diff(xs) # TODO allocates
+    drifts .= zero(eltype(drifts))
+    drifts[begin:end-1] .= diag(A, 1) .* dx
+    drifts[begin+1:end] .-= diag(A, -1) .* dx
+    return drifts
+end
+
+function extract_drift(A, xs)
+    drifts = zeros(length(xs))
+    return extract_drift!(drifts, A, xs)
+end
