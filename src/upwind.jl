@@ -1,22 +1,3 @@
-"""
-    UpwindDifferences
-
-Implements a finite differences method based on an upwind scheme to solve Hamilton-Jacobi-Bellman (HJB) equations.
-"""
-module UpwindDifferences
-
-using LinearAlgebra
-
-#=
-Problem:
-    ρv(x) = max_c {r(x, c) + ∂vₓ(x)ẋ(x, c)}
-    where:  ẋ(x, c) = g(x, c)
-            ẋ(x̲, c) ≥ 0
-            ẋ(x̅, c) ≤ 0
-
-Let b(x, ∂v) = argmax_c {r(x, c) + ∂vₓ(x)g(x, c)}
-=#
-
 """Contains the optimal reward vector, `R`, and forward and backward drift, `GF` and `GB`."""
 struct UpwindResult{T <: Number}
     R::Vector{T}
@@ -25,29 +6,6 @@ struct UpwindResult{T <: Number}
 end
 
 UpwindResult(v::AbstractVector) = UpwindResult(map(v -> zeros(eltype(v), length(v)), (v,v,v))...)
-
-"""
-    policy_matrix!(A, UR::UpwindResult)
-
-Update tridiagonal band of `A` to the Poisson transition matrix implied by the drifts in `UR`.
-"""
-function policy_matrix!(A, UR::UpwindResult)
-    A[diagind(A, -1)] .= .-@view(UR.GB[2:end]) 
-    A[diagind(A, 0)]  .= UR.GB .- UR.GF
-    A[diagind(A, 1)]  .= @view(UR.GF[1:end-1])
-    return A
-end
-
-"""
-    policy_matrix(A, UR::UpwindResult)
-
-Return a tridiagonal matrix representation of the Poisson transition matrix implied by the drifts in `UR`.
-"""
-function policy_matrix(UR::UpwindResult)
-    n = length(UR.R)
-    A = Tridiagonal(map(zeros, (n-1, n, n-1))...)
-    return policy_matrix!(A, UR)
-end
 
 """Compute the forward difference of vector `v` at index i"""
 function fdiff(v, dx, i)
@@ -187,61 +145,3 @@ function get_interior_upwind(x, dvf, dvb, reward, drift, policy, zerodrift)
     end
     return R, GF, GB
 end
-
-# ===== Backwards iteration functions =====
-struct ExplicitBackwardsIteration end
-struct ImplicitBackwardsIteration end
-struct ImplicitAdjustment{V, F}
-    va::V 
-    lcp::F # a function from (x0, M, q)
-end
-
-"""
-    backwards_iterate!(v0, v1, r, A, ρ, Δ, method)
-
-Approximate `v0 ≡ v_t` given `v1 ≡ v_{t+Δ}` using the HJB equation: ``ρv = r + A * v + v̇``.
-
-# Methods
-
-Two methods are available:
-
--  `ExplicitBackwardsIteration()` uses a backwards approximation of the time derivative, i.e.,
-   the method solves: ``ρv1 = r + A * v1 + (1 / Δ) * (v1 - v0)``;
--  `ImplicitBackwardsIteration()` uses a forwards approximation of the time derivative, i.e,
-   the method solves: ``ρv0 = r + A * v0 + (1 / Δ) * (v1 - v0)``.
-"""
-function backwards_iterate!(v0, v1, r, A, ρ, Δ, ::ExplicitBackwardsIteration)
-    v0 .= r
-    mul!(v0, (ρ * I - A), v1, 1, -1)
-    # now v0 contains (1/Δ)(v1 - v)
-    v0 .*= -Δ
-    v0 .+= v1
-    return v0
-end
-
-function backwards_iterate!(v0, v1, r, A, ρ, Δ, ::ImplicitBackwardsIteration)
-    v0 .= r .+ (1 / Δ) .* v1
-    ldiv!(factorize((ρ + 1 / Δ) * I - A), v0)
-    return v0
-end
-
-function backwards_iterate!(v0, v1, r, A, ρ, Δ, adjustment_method::ImplicitAdjustment)
-    M = (ρ + 1 / Δ) * I - A
-    q = -(r .+ v1 ./ Δ) .+ M * adjustment_method.va
-    v0 .= max.(v1 .- adjustment_method.va, 0)
-    for _ in 1:20 # run repeatedly in case the LCP is not initially solved
-        v0 .= adjustment_method.lcp(v0, M, q)
-        maximum(abs.(v0 .* (M * v0 + q))) < 0.1 && break
-    end
-    v0 .+= adjustment_method.va
-    return v0
-end
-
-# ===== Exports =====
-export UpwindResult, 
-       upwind!, upwind,
-       policy_matrix, policy_matrix!,
-       backwards_iterate!,
-       ImplicitBackwardsIteration, ExplicitBackwardsIteration
-
-end # module

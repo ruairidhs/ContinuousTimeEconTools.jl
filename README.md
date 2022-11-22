@@ -1,5 +1,3 @@
-# UpwindDifferences
+# ContinuousTimeEconTools
 
-WORK IN PROGRESS.
-
-Implements a finite differences method based on an upwind scheme to solve Hamilton-Jacobi-Bellman (HJB) equations.
+Some functions that I use to solve continuous-time economics models using upwind finite-differences.
