@@ -72,7 +72,7 @@ function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
     n == length(v) || throw(ArgumentError("length of value function must equal length of state-space"))
     z  = zero(eltype(GB))
 
-    # Lower state constraint
+    # Lower state constraint: asserts that min(drift)=0
     dxf = xs[2] - xs[1]
     dvf = fdiff(v, dxf, 1)
     bf = policy(xs[1], dvf)
@@ -94,7 +94,7 @@ function upwind!(UR::UpwindResult, v, xs, reward, drift, policy, zerodrift)
         R[i], GF[i], GB[i] = get_interior_upwind(xs[i], dvf, dvb, reward, drift, policy, zerodrift)
     end
 
-    # Upper state constraint
+    # Upper state constraint: asserts that max(drift)=0
     dvb = fdiff(v, dxf, n-1)
     bb = policy(xs[end], dvb)
     gb = drift(xs[end], bb)
@@ -136,7 +136,7 @@ See also [`upwind!`](@ref) for an efficient inplace version.
 - `reward(x, c)::Function`: returns the flow reward given state value `x` and control value `c`.
 - `drift(x, c)::Function`: returns the drift in the state given current state value `x` and control value `v`.
 - `policy(x, dv)::Function`: returns the optimal control value given current state value `x` and value function derivative `dv`.
-- zerodrift(x)::Function`: returns the control value which results in zero drift, i.e, `drift(x, zerodrift(x)) = 0`.
+- `zerodrift(x)::Function`: returns the control value which results in zero drift, i.e, `drift(x, zerodrift(x)) = 0`.
 """
 function upwind(v, xs, reward, drift, policy, zerodrift)
     UR = UpwindResult(v)
@@ -191,6 +191,10 @@ end
 # ===== Backwards iteration functions =====
 struct ExplicitBackwardsIteration end
 struct ImplicitBackwardsIteration end
+struct ImplicitAdjustment{V, F}
+    va::V 
+    lcp::F # a function from (x0, M, q)
+end
 
 """
     backwards_iterate!(v0, v1, r, A, ρ, Δ, method)
@@ -218,6 +222,18 @@ end
 function backwards_iterate!(v0, v1, r, A, ρ, Δ, ::ImplicitBackwardsIteration)
     v0 .= r .+ (1 / Δ) .* v1
     ldiv!(factorize((ρ + 1 / Δ) * I - A), v0)
+    return v0
+end
+
+function backwards_iterate!(v0, v1, r, A, ρ, Δ, adjustment_method::ImplicitAdjustment)
+    M = (ρ + 1 / Δ) * I - A
+    q = -(r .+ v1 ./ Δ) .+ M * adjustment_method.va
+    v0 .= max.(v1 .- adjustment_method.va, 0)
+    for _ in 1:20 # run repeatedly in case the LCP is not initially solved
+        v0 .= adjustment_method.lcp(v0, M, q)
+        maximum(abs.(v0 .* (M * v0 + q))) < 0.1 && break
+    end
+    v0 .+= adjustment_method.va
     return v0
 end
 
