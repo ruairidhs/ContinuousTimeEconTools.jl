@@ -23,6 +23,7 @@ include("utils.jl")
 
 export UpwindResult, 
        upwind!, upwind,
+       empty_policy_matrix,
        policy_matrix, policy_matrix!,
        extract_drift, extract_drift!,
        fixedpoint,

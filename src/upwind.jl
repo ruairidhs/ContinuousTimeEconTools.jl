@@ -6,6 +6,7 @@ struct UpwindResult{T <: Number}
 end
 
 UpwindResult(v::AbstractVector) = UpwindResult(map(v -> zeros(eltype(v), length(v)), (v,v,v))...)
+UpwindResult(T, n::Int) = UpwindResult(map(v -> zeros(T, n), 1:3)...)
 
 """Compute the forward difference of vector `v` at index i"""
 function fdiff(v, dx, i)
