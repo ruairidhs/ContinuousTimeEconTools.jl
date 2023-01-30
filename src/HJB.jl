@@ -51,20 +51,21 @@ function iterateHJB!(v0, v1, vt, r, A, ρ, λ, Δ, ::Implicit)
     return v0
 end
 
-function iterateHJBVI!(v0, v1, va, r, A, ρ, Δ, LCPsolver; tol=1e-2)
+function iterateHJBVI!(v0, v1, va, r, A, ρ, Δ, LCPsolver; tol = 1e-2)
     M = (ρ + 1 / Δ) * I - A
     q = -(r .+ v1 ./ Δ) .+ M * va
     v0 .= max.(v1 .- va, 0)
-    for _ in 1:20
+    for _ = 1:20
         v0 .= LCPsolver(v0, M, q)
         maximum(abs.(v0 .* (M * v0 + q))) < tol && break
     end
     v0 .+= va
     return v0
 end
-iterateHJBVI!(v0, v1, va, vt, r, A, ρ, λ, Δ, LCPsolver; kwargs...) = iterateHJBVI!(v0, v1, va, r .+ λ .* vt, A, ρ + λ, Δ, LCPsolver; kwargs...)
+iterateHJBVI!(v0, v1, va, vt, r, A, ρ, λ, Δ, LCPsolver; kwargs...) =
+    iterateHJBVI!(v0, v1, va, r .+ λ .* vt, A, ρ + λ, Δ, LCPsolver; kwargs...)
 
-empty_policy_matrix(n::Int) = Tridiagonal(map(zeros, (n-1, n, n-1))...)
+empty_policy_matrix(n::Int) = Tridiagonal(map(zeros, (n - 1, n, n - 1))...)
 
 """
     policy_matrix!(A, UR::UpwindResult)
@@ -72,9 +73,9 @@ empty_policy_matrix(n::Int) = Tridiagonal(map(zeros, (n-1, n, n-1))...)
 Update tridiagonal band of `A` to the Poisson transition matrix implied by the drifts in `UR`.
 """
 function policy_matrix!(A, UR::UpwindResult)
-    A[diagind(A, -1)] .= .-@view(UR.GB[2:end]) 
-    A[diagind(A, 0)]  .= UR.GB .- UR.GF
-    A[diagind(A, 1)]  .= @view(UR.GF[1:end-1])
+    A[diagind(A, -1)] .= .-@view(UR.GB[2:end])
+    A[diagind(A, 0)] .= UR.GB .- UR.GF
+    A[diagind(A, 1)] .= @view(UR.GF[1:end-1])
     return A
 end
 
@@ -90,7 +91,8 @@ end
 
 
 function extract_drift!(drifts, A, xs)
-    length(drifts) == length(xs) || throw(ArgumentError("lengths of drifts and xs do not match"))
+    length(drifts) == length(xs) ||
+        throw(ArgumentError("lengths of drifts and xs do not match"))
     dx = diff(xs) # TODO allocates
     drifts .= zero(eltype(drifts))
     drifts[begin:end-1] .= diag(A, 1) .* dx

@@ -2,11 +2,11 @@
 
     function make_HJB_functions(θ, y)
         minc, maxc = 1e-4, 1e4
-        reward(x, c) = -(1/θ) * exp(-θ * c)
+        reward(x, c) = -(1 / θ) * exp(-θ * c)
         drift(x, c) = y - c
         function policy(x, dv)
             dv <= 0 && return maxc
-            base_c = -(1/θ) * log(dv)
+            base_c = -(1 / θ) * log(dv)
             return max(minc, min(maxc, base_c))
         end
         zerodrift(x) = y
@@ -17,7 +17,7 @@
         n = length(xgrid)
         vinit = @. (1 / ρ) * log(xgrid .+ 1.0)
         UR = UpwindResult(vinit)
-        A = sparse(Tridiagonal(zeros(n-1), zeros(n), zeros(n-1)))
+        A = sparse(Tridiagonal(zeros(n - 1), zeros(n), zeros(n - 1)))
         reward, drift, policy, zerodrift = make_HJB_functions(θ, y)
 
         function iterate!(v0, v1, dt)
@@ -27,7 +27,13 @@
             return v0
         end
 
-        res = fixedpoint((v0, v1) -> iterate!(v0, v1, dt), vinit; maxiter=maxiter, verbose=false, err_increase_tol = 1.0)
+        res = fixedpoint(
+            (v0, v1) -> iterate!(v0, v1, dt),
+            vinit;
+            maxiter = maxiter,
+            verbose = false,
+            err_increase_tol = 1.0,
+        )
         return (value = res.value, A = A, status = res.status)
     end
 
@@ -53,16 +59,17 @@
     end
 
     # Test the explicit method
-    specs = [(range(0.0, 1.0, length=25), 2.0, 1.0, 0.05), # different grid sizes
-             (range(0.0, 1.0, length=100), 2.0, 1.0, 0.05),
-             (range(0.0, 1.0, length=500), 2.0, 1.0, 0.05),
-             (range(0.0, 1.0, length=1000), 2.0, 1.0, 0.05),
-             (vcat([0.0], exp.(range(log(1e-6), log(1), length=100))), 2.0, 1.0, 0.05), # irregular grid
-             (range(0.0, 1.0, length=100), 2.0, 1.0, 0.10), # different parameters
-             (range(0.0, 1.0, length=100), 2.0, 1.0, 0.01),
-             (range(0.0, 1.0, length=100), 2.0, 10.0, 0.05),
-             (range(0.0, 1.0, length=100), 8.0, 1.0, 0.05),
-            ]
+    specs = [
+        (range(0.0, 1.0, length = 25), 2.0, 1.0, 0.05), # different grid sizes
+        (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.05),
+        (range(0.0, 1.0, length = 500), 2.0, 1.0, 0.05),
+        (range(0.0, 1.0, length = 1000), 2.0, 1.0, 0.05),
+        (vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), 2.0, 1.0, 0.05), # irregular grid
+        (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.10), # different parameters
+        (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.01),
+        (range(0.0, 1.0, length = 100), 2.0, 10.0, 0.05),
+        (range(0.0, 1.0, length = 100), 8.0, 1.0, 0.05),
+    ]
     for spec in specs
         test_spec(spec..., ContinuousTimeEconTools.Implicit(), 1000.0, 1000)
     end

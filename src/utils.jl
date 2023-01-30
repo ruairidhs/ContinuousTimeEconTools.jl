@@ -26,20 +26,28 @@ julia> fixedpoint((x1, x0) -> iterate!(x1, x0, 0.9), init, cache)
 (value = [4.165953662869907e-10, 8.331907325739814e-10], iter = 205, err = 9.257674806377564e-11, status = :converged)
 ```
 """
-function fixedpoint(iterate!, init, cache; 
-        distance=supnorm, copy_func=copy!, maxiter=1000, tol=1e-12, verbose=false,
-        err_increase_tol = 0.0
-    )
+function fixedpoint(
+    iterate!,
+    init,
+    cache;
+    distance = supnorm,
+    copy_func = copy!,
+    maxiter = 1000,
+    tol = 1e-12,
+    verbose = false,
+    err_increase_tol = 0.0,
+)
     x0, x1 = cache
     copy_func(x0, init)
     err = Inf
     err_old = Inf
 
-    for iter in 1:maxiter
+    for iter = 1:maxiter
         iterate!(x1, x0)
         err = distance(x1, x0)
         verbose && @info "Iteration: $iter; Error: $err"
-        err - err_old >= err_increase_tol && return (value = x0, iter = iter, err = err, status = :error_increase)
+        err - err_old >= err_increase_tol &&
+            return (value = x0, iter = iter, err = err, status = :error_increase)
         err <= tol && return (value = x1, iter = iter, err = err, status = :converged)
         copy_func(x0, x1)
         err_old = err
