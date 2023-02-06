@@ -1,5 +1,5 @@
 # Mutable because I want to be able to change rf and gf
-mutable struct Upwinder{T, P, RF<:SubArray{T, 1, P}, GF<:SubArray{T, 1, P}}
+mutable struct Upwinder{T,P,RF<:SubArray{T,1,P},GF<:SubArray{T,1,P}}
     N::Int
     rf::RF # results
     gf::GF
@@ -15,7 +15,8 @@ end
 function Upwinder(x, r::SubArray, g::SubArray)
     size(x) == size(r) || throw(DimensionMismatch("x and r have incompatible lengths"))
     size(x) == size(g) || throw(DimensionMismatch("x and g have incompatible lengths"))
-    Base.require_one_based_indexing(x, r, g) || throw(ArgumentError("array inputs must have one based indexing"))
+    Base.require_one_based_indexing(x, r, g) ||
+        throw(ArgumentError("array inputs must have one based indexing"))
     n = length(x)
     return Upwinder(
         n,
@@ -33,20 +34,20 @@ end
 
 Upwinder(x, r, g) = throw(ArgumentError("Upwinder only supports SubArrays (views)"))
 
-function set_reward!(U::Upwinder{T, P, RF, GF}, r::RF) where {T, P, RF, GF}
+function set_reward!(U::Upwinder{T,P,RF,GF}, r::RF) where {T,P,RF,GF}
     length(r) == U.N || throw(DimensionMismatch())
     U.rf = r
     return nothing
 end
 
-function set_drift!(U::Upwinder{T, P, RF, GF}, g::GF) where {T, P, RF, GF}
+function set_drift!(U::Upwinder{T,P,RF,GF}, g::GF) where {T,P,RF,GF}
     length(g) == U.N || throw(DimensionMismatch())
     U.gf = g
     return nothing
 end
 
 # Place the drift into a policy matrix
-function policy_matrix!(A, x, U::Upwinder{T, RF, GF}) where {T, RF, GF}
+function policy_matrix!(A, x, U::Upwinder{T,RF,GF}) where {T,RF,GF}
     size(A) == (U.N, U.N) || throw(DimensionMismatch("incompatible A"))
     length(x) == U.N || throw(DimensionMismatch("incompatible x"))
     # First scale by the x-step and sort into forward and backward drifts
@@ -54,7 +55,7 @@ function policy_matrix!(A, x, U::Upwinder{T, RF, GF}) where {T, RF, GF}
     F, B = U.rz, U.gb # just caches to be overwritten
     drifts = U.gf
     Z = zero(T)
-    for i in 1:U.N
+    for i = 1:U.N
         if drifts[i] > Z
             F[i] = drifts[i] / (x[i+1] - x[i])
             B[i] = Z
@@ -81,9 +82,12 @@ function (U::Upwinder)(v, x, funcs)
     reward, policy, drift, zerodrift = funcs
     (; dv, rf, gf, rb, gb, rz, If, Ib, Is) = U
     # Ensure boundary conditions are satisfied
-    If[end] = false; Ib[begin] = false
-    gf[end] = zero(eltype(gf)); gb[begin] = zero(eltype(gf))
-    rf[end] = zero(eltype(rf)); rb[begin] = zero(eltype(rb))
+    If[end] = false
+    Ib[begin] = false
+    gf[end] = zero(eltype(gf))
+    gb[begin] = zero(eltype(gf))
+    rf[end] = zero(eltype(rf))
+    rb[begin] = zero(eltype(rb))
 
     dv!(dv, v, x)
     fill_forward!(rf, gf, If, x, dv, reward, policy, drift)

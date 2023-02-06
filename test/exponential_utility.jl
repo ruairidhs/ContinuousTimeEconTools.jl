@@ -20,12 +20,17 @@ function get_numerical_policy(xgrid, θ, y, ρ, Δ, method)
     HJBfuncs = make_HJB_functions(θ, y)
     vinit = @. (1 / ρ) * log(xgrid .+ 1.0)
     nx = length(xgrid)
-    A = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-    res = invariant_value_function(vinit, xgrid, A, HJBfuncs,
-                                   HJBIterator(ρ, Δ, method);
-                                   maxiter = 1_000_000, err_increase_tol = 1.0,
-                                   verbose = false
-                                  )
+    A = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
+    res = invariant_value_function(
+        vinit,
+        xgrid,
+        A,
+        HJBfuncs,
+        HJBIterator(ρ, Δ, method);
+        maxiter = 1_000_000,
+        err_increase_tol = 1.0,
+        verbose = false,
+    )
     res.status == :converged || error("failed to converge")
     return map(HJBfuncs[3], xgrid, res.G)
 end

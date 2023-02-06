@@ -6,10 +6,10 @@ include("old_upwinding.jl")
 function make_HJB_functions(θ, y)
     @assert θ > 1.0
     minc, maxc = 1e-4, 1e4
-    reward(_, c) = (c ^ (1 - θ) - 1) / (1 - θ)
+    reward(_, c) = (c^(1 - θ) - 1) / (1 - θ)
     function policy(_, dv::T) where {T}
         dv <= zero(T) && return maxc
-        base_c = dv ^ (-1/θ)
+        base_c = dv^(-1 / θ)
         return max(minc, min(maxc, base_c))
     end
     drift(x, c) = 0.02 * x + y - c
@@ -26,11 +26,11 @@ function test_grid(xg, HJBfuncs, ρ)
     # Run the new and old methods and check the reward and transitions are equal
     U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
     U(vinit, xg, HJBfuncs)
-    Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
+    Anew = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
     ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)
 
     old_res = OldCode.upwind(vinit, xg, reward, drift, policy, zd)
-    Aold = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
+    Aold = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
     OldCode.policy_matrix!(Aold, old_res)
 
     @test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
@@ -43,11 +43,11 @@ function test_grid(xg, HJBfuncs, ρ)
 
     U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
     U(vinit_non_concave, xg, HJBfuncs)
-    Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
+    Anew = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
     ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)
 
     old_res = OldCode.upwind(vinit_non_concave, xg, reward, drift, policy, zd)
-    Aold = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
+    Aold = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
     OldCode.policy_matrix!(Aold, old_res)
 
     @test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
@@ -60,17 +60,29 @@ function test_grid(xg, HJBfuncs, ρ)
     vres0, vres1 = copy(vinit), copy(vinit)
     r, g = ones(nx), ones(nx)
     U = ContinuousTimeEconTools.Upwinder(xg, view(r, :, ()...), view(g, :, ()...))
-    for iter in 1:10
+    for iter = 1:10
         Anew .= 0
-        ContinuousTimeEconTools.backwards_iterate!(vres0, vres1, xg, U, r, g, Anew, HJBfuncs,
-                                ContinuousTimeEconTools.HJBIterator(0.05, 10.0, ContinuousTimeEconTools.Implicit())
-                               )
+        ContinuousTimeEconTools.backwards_iterate!(
+            vres0,
+            vres1,
+            xg,
+            U,
+            r,
+            g,
+            Anew,
+            HJBfuncs,
+            ContinuousTimeEconTools.HJBIterator(
+                0.05,
+                10.0,
+                ContinuousTimeEconTools.Implicit(),
+            ),
+        )
         vres1 .= vres0
     end
 
     vres0_old, vres1_old = copy(vinit), copy(vinit)
     rcache = similar(vres0_old)
-    for iter in 1:10
+    for iter = 1:10
         or = OldCode.upwind(vres1_old, xg, reward, drift, policy, zd)
         rcache .= or.R
         OldCode.policy_matrix!(Aold, or)
@@ -86,7 +98,11 @@ function test_grid(xg, HJBfuncs, ρ)
 end
 
 test_grid(range(0.0, 1.0, length = 100), make_HJB_functions(2.0, 1.0), 0.05)
-test_grid(vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), make_HJB_functions(2.0, 1.0), 0.05)
+test_grid(
+    vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))),
+    make_HJB_functions(2.0, 1.0),
+    0.05,
+)
 
 # ===== 2d dimensional test =====
 function make_Λy(ys)
@@ -101,10 +117,10 @@ end
 function make_HJB_functions_2d(θ, ys)
     @assert θ > 1.0
     minc, maxc = 1e-4, 1e4
-    reward(_, c, _) = (c ^ (1 - θ) - 1) / (1 - θ)
+    reward(_, c, _) = (c^(1 - θ) - 1) / (1 - θ)
     function policy(_, dv::T, _) where {T}
         dv <= zero(T) && return maxc
-        base_c = dv ^ (-1/θ)
+        base_c = dv^(-1 / θ)
         return max(minc, min(maxc, base_c))
     end
     drift(x, c, yi) = 0.02 * x + ys[yi] - c
@@ -128,18 +144,20 @@ function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
 
     # old
     Aexog = kron(sparse(Λy), I(nx))
-    Aendog = kron(I(ny), sparse(Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))))
+    Aendog = kron(I(ny), sparse(Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))))
     Rold = zeros(nx * ny)
     vres0_old, vres1_old = copy(vinit), copy(vinit)
     function iterate_old!(v0, v1)
         loc = 0
         for yi in axes(v1, 2)
-            ur = OldCode.upwind(view(v1, :, yi), xg,
-                                (x, c) -> reward(x, c, yi),
-                                (x, c) -> drift(x, c, yi),
-                                (x, dv) -> policy(x, dv, yi),
-                                x -> zd(x, yi),
-                               )
+            ur = OldCode.upwind(
+                view(v1, :, yi),
+                xg,
+                (x, c) -> reward(x, c, yi),
+                (x, c) -> drift(x, c, yi),
+                (x, dv) -> policy(x, dv, yi),
+                x -> zd(x, yi),
+            )
             inds = loc+1:loc+nx
             Rold[inds] .= ur.R
             OldCode.policy_matrix!(@view(Aendog[inds, inds]), ur)
@@ -158,8 +176,9 @@ function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
     @test vres0 ≈ vres0_old
 
     # and now check the invariant
-    new_res = ContinuousTimeEconTools.invariant_value_function(vinit, xg, Aexog, HJBfuncs, HJB)
-    for iter in 1:500
+    new_res =
+        ContinuousTimeEconTools.invariant_value_function(vinit, xg, Aexog, HJBfuncs, HJB)
+    for iter = 1:500
         iterate_old!(vres0_old, vres1_old)
         vres1_old .= vres0_old
     end
@@ -169,4 +188,10 @@ end
 ys = [0.25, 0.5, 0.75, 1.0]
 Λy = make_Λy(ys)
 test_grid_2d(range(0.0, 1.0, length = 100), ys, Λy, make_HJB_functions_2d(2.0, ys), 0.05)
-test_grid_2d(vcat([0.0], exp.(range(log(1e-6), log(1), length=100))), ys, Λy, make_HJB_functions_2d(2.0, ys), 0.05)
+test_grid_2d(
+    vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))),
+    ys,
+    Λy,
+    make_HJB_functions_2d(2.0, ys),
+    0.05,
+)
