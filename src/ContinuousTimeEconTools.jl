@@ -5,28 +5,21 @@ Implements a finite differences method based on an upwind scheme to solve Hamilt
 """
 module ContinuousTimeEconTools
 
-using LinearAlgebra
-
-#=
-Problem:
-    ρv(x) = max_c {r(x, c) + ∂vₓ(x)ẋ(x, c)}
-    where:  ẋ(x, c) = g(x, c)
-            ẋ(x̲, c) ≥ 0
-            ẋ(x̅, c) ≤ 0
-
-Let b(x, ∂v) = argmax_c {r(x, c) + ∂vₓ(x)g(x, c)}
-=#
+using LinearAlgebra,
+      SparseArrays,
+      LoopVectorization
 
 include("upwind.jl")
 include("HJB.jl")
 include("utils.jl")
+include("dimensions.jl")
 
-export UpwindResult, 
-       upwind!, upwind,
-       empty_policy_matrix,
-       policy_matrix, policy_matrix!,
-       extract_drift, extract_drift!,
-       fixedpoint,
-       iterateHJB!, iterateHJBVI!
+export backwards_iterate!,
+       invariant_value_function,
+       make_exogenous_transition,
+       Upwinder,
+       HJBIterator,
+       Explicit,
+       Implicit
 
 end # module
