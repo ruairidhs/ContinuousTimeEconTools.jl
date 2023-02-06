@@ -3,9 +3,11 @@ using ContinuousTimeEconTools,
       LinearAlgebra,
       SparseArrays
 
-testfiles = ["regression.jl", ]#"exponential_utility.jl"]
-for f in testfiles
-    @testset verbose = true "$(f)" begin
-        include(f)
+testfiles = ["exponential_utility.jl", "regression.jl", ]
+@testset verbose = true "ContinuousTimeEconTools" begin
+    for f in testfiles
+        @testset verbose = true "$(f)" begin
+            include(f)
+        end
     end
 end

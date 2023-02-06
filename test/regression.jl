@@ -84,8 +84,8 @@ function test_grid(xg, HJBfuncs, ρ)
     @test all(OldCode.extract_drift(Aold, xg) .≈ g)
 end
 
-#test_grid(range(0.0, 1.0, length = 100), make_HJB_functions(2.0, 1.0), 0.05)
-#test_grid(vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), make_HJB_functions(2.0, 1.0), 0.05)
+test_grid(range(0.0, 1.0, length = 100), make_HJB_functions(2.0, 1.0), 0.05)
+test_grid(vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), make_HJB_functions(2.0, 1.0), 0.05)
 
 # ===== 2d dimensional test =====
 function make_Λy(ys)
@@ -96,7 +96,6 @@ function make_Λy(ys)
     end
     return base
 end
-
 
 function make_HJB_functions_2d(θ, ys)
     @assert θ > 1.0
@@ -166,130 +165,7 @@ function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
     @test maximum(abs.(vres1_old .- new_res.value)) .<= 1e-10
 end
 
-ys = [0.2, 0.5, 0.75, 1.0]
+ys = [0.25, 0.5, 0.75, 1.0]
 Λy = make_Λy(ys)
-xg = range(0.0, 1.0, length=100)
-HJBfuncs = make_HJB_functions_2d(2.0, ys)
-
 test_grid_2d(range(0.0, 1.0, length = 100), ys, Λy, make_HJB_functions_2d(2.0, ys), 0.05)
 test_grid_2d(vcat([0.0], exp.(range(log(1e-6), log(1), length=100))), ys, Λy, make_HJB_functions_2d(2.0, ys), 0.05)
-#test_grid(vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), make_HJB_functions(2.0, 1.0), 0.05)
-
-#=
-ρ = 0.05
-y = 1.0
-θ = 2.0
-HJBfuncs = make_HJB_functions(θ, y)
-reward, policy, drift, zd = HJBfuncs
-
-# Grid 1
-xg1 = range(0.0, 1.0, length = 100)
-vinit1 = @. (1 / ρ) * log(xg1 + 1.0)
-nx = length(xg1)
-
-# New method
-U = CTET.Upwinder(xg1)
-U(vinit1, xg1, HJBfuncs)
-Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-CTET.policy_matrix!(Anew, xg1, U)
-
-# Old method
-old_res = OldCode.upwind(vinit1, xg1, reward, drift, policy, zd)
-Aold = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-OldCode.policy_matrix!(Aold, old_res)
-
-# check they are the same
-@test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
-@test all((old_res.GF .== 0) .== (max.(U.gf, 0) .== 0))
-@test all((old_res.GB .== 0) .== (min.(U.gb, 0) .== 0))
-@test maximum(abs.(Aold .- Anew)) .< 1e-12
-
-# check with a non-concave (but increasing) initial value function
-vinit_non_concave = max.(log.(xg1 .+ 0.01), 0.1 .* log.(xg1 .+ 0.01) .- 0.2)
-
-U = CTET.Upwinder(xg1)
-U(vinit_non_concave, xg1, HJBfuncs)
-Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-CTET.policy_matrix!(Anew, xg1, U)
-
-old_res = OldCode.upwind(vinit_non_concave, xg1, reward, drift, policy, zd)
-Aold = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-OldCode.policy_matrix!(Aold, old_res)
-
-@test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
-@test all((old_res.GF .== 0) .== (max.(U.gf, 0) .== 0))
-@test all((old_res.GB .== 0) .== (min.(U.gb, 0) .== 0))
-@test maximum(abs.(Aold .- Anew)) .< 1e-12
-
-# and then test a backwards iteration step
-# new:
-Anew .= 0
-vres0, vres1 = copy(vinit1), copy(vinit1)
-r, g = ones(nx), ones(nx)
-U = CTET.Upwinder(xg1, view(r, :, ()...), view(g, :, ()...))
-for iter in 1:100
-    Anew .= 0
-    CTET.backwards_iterate!(vres0, vres1, xg1, U, r, g, Anew, HJBfuncs,
-                            CTET.HJBIterator(0.05, 10.0, CTET.Implicit())
-                           )
-    #=
-    U(vres1, xg1, HJBfuncs)
-    CTET.policy_matrix!(Anew, xg1, U)
-    CTET.HJBIterator(0.05, 10.0, CTET.Implicit())(vres0, vres1, U.rf, Anew)
-    =#
-    vres1 .= vres0
-end
-
-# invariant
-Aexog = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-res = CTET.invariant_value_function(vinit1, xg1, Aexog, HJBfuncs, CTET.HJBIterator(0.05, 10.0, CTET.Implicit()); maxiter = 1000)
-
-# old:
-vres0_old, vres1_old = copy(vinit1), copy(vinit1)
-rcache = similar(vres0_old)
-for iter in 1:100
-    or = OldCode.upwind(vres1_old, xg1, reward, drift, policy, zd)
-    rcache .= or.R
-    OldCode.policy_matrix!(Aold, or)
-    vres0_old .= or.R .+ (1 / 10.0) .* vres1_old
-    ldiv!(factorize((0.05 + 1 / 10.0) * I - Aold), vres0_old)
-    vres1_old .= vres0_old
-end
-
-# and then check they are the same
-@test all(U.rf .≈ rcache)
-@test all(Anew .≈ Aold)
-@test all(vres1 .≈ vres1_old)
-@test all(res.value .≈ vres1_old)
-
-@test all(OldCode.extract_drift(Aold, xg1) .≈ g)
-@test all(OldCode.extract_drift(Aold, xg1) .≈ res.G)
-
-map(drift, xg1, res.G) .- analytic_policy(xg1)
-
-function analytic_policy(xgrid; θ=2.0, y=1.0, ρ=0.05)
-    return y .+ sqrt.(2 * (ρ / θ) * xgrid)
-end
-
-# Grid 2
-xg2 = vcat([0.0], exp.(range(log(1e-6), log(1), length = 100)))
-vinit2 = @. (1 / ρ) * log(xg2 + 1.0)
-nx = length(xg2)
-
-# New method
-U = CTET.Upwinder(xg2)
-U(vinit2, xg2, HJBfuncs)
-Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-CTET.policy_matrix!(Anew, xg2, U)
-
-# Old method
-old_res = OldCode.upwind(vinit2, xg2, reward, drift, policy, zd)
-Aold = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
-OldCode.policy_matrix!(Aold, old_res)
-
-# check they are the same
-@test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
-@test all((old_res.GF .== 0) .== (max.(U.gf, 0) .== 0))
-@test all((old_res.GB .== 0) .== (min.(U.gb, 0) .== 0))
-@test maximum(abs.(Aold .- Anew)) .< 1e-12
-=#
