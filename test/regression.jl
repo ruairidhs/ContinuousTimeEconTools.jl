@@ -20,10 +20,11 @@ end
 function test_grid(xg, HJBfuncs, ρ)
     vinit = @. (1 / ρ) * log(xg + 1.0)
     nx = length(xg)
+    r, g = similar(xg), similar(xg)
     reward, policy, drift, zd = HJBfuncs
 
     # Run the new and old methods and check the reward and transitions are equal
-    U = ContinuousTimeEconTools.Upwinder(xg)
+    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
     U(vinit, xg, HJBfuncs)
     Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
     ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)
@@ -40,7 +41,7 @@ function test_grid(xg, HJBfuncs, ρ)
     # Run the same check but with a non-concave initial value function
     vinit_non_concave = max.(log.(xg .+ 0.01), 0.1 .* log.(xg .+ 0.01) .- 0.2)
 
-    U = ContinuousTimeEconTools.Upwinder(xg)
+    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
     U(vinit_non_concave, xg, HJBfuncs)
     Anew = Tridiagonal(zeros(nx-1), zeros(nx), zeros(nx-1))
     ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)

@@ -1,5 +1,5 @@
 # Mutable because I want to be able to change rf and gf
-mutable struct Upwinder{T,RF<:AbstractVector{T},GF<:AbstractVector{T}}
+mutable struct Upwinder{T, P, RF<:SubArray{T, 1, P}, GF<:SubArray{T, 1, P}}
     N::Int
     rf::RF # results
     gf::GF
@@ -12,20 +12,7 @@ mutable struct Upwinder{T,RF<:AbstractVector{T},GF<:AbstractVector{T}}
     Is::BitVector
 end
 
-Upwinder(x) = Upwinder(
-    length(x),
-    similar(x),
-    similar(x),
-    zeros(eltype(x), length(x) - 1),
-    similar(x),
-    similar(x),
-    similar(x),
-    BitVector(false for _ = 1:length(x)),
-    BitVector(false for _ = 1:length(x)),
-    BitVector(false for _ = 1:length(x)),
-)
-
-function Upwinder(x, r, g)
+function Upwinder(x, r::SubArray, g::SubArray)
     size(x) == size(r) || throw(DimensionMismatch("x and r have incompatible lengths"))
     size(x) == size(g) || throw(DimensionMismatch("x and g have incompatible lengths"))
     Base.require_one_based_indexing(x, r, g) || throw(ArgumentError("array inputs must have one based indexing"))
@@ -44,13 +31,15 @@ function Upwinder(x, r, g)
     )
 end
 
-function set_reward!(U::Upwinder, r)
+Upwinder(x, r, g) = throw(ArgumentError("Upwinder only supports SubArrays (views)"))
+
+function set_reward!(U::Upwinder{T, P, RF, GF}, r::RF) where {T, P, RF, GF}
     length(r) == U.N || throw(DimensionMismatch())
     U.rf = r
     return nothing
 end
 
-function set_drift!(U::Upwinder, g)
+function set_drift!(U::Upwinder{T, P, RF, GF}, g::GF) where {T, P, RF, GF}
     length(g) == U.N || throw(DimensionMismatch())
     U.gf = g
     return nothing
