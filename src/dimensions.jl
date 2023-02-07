@@ -2,7 +2,18 @@ outer_indices(V::AbstractVector) = Base.Iterators.repeated((), 1)
 outer_indices(A::AbstractArray{T,N}) where {T,N} =
     Iterators.product((axes(A, i) for i = 2:N)...)
 
-function backwards_iterate!(V0, V1, x, U::Upwinder, R, G, A, funcs, HJB::HJBIterator)
+function backwards_iterate!(
+    V0,
+    V1,
+    x,
+    U::Upwinder,
+    R,
+    G,
+    A::Tridiagonal,
+    Ax,
+    funcs,
+    HJB::HJBIterator,
+)
     reward, policy, drift, zerodrift = funcs
     nx = length(x)
     loc = 0
@@ -17,10 +28,10 @@ function backwards_iterate!(V0, V1, x, U::Upwinder, R, G, A, funcs, HJB::HJBIter
         set_drift!(U, view(G, :, inds...))
         U(view(V1, :, inds...), x, inner_funcs)
         inds = loc+1:loc+nx
-        policy_matrix!(@view(A[inds, inds]), x, U)
+        @views policy_matrix!(A.dl[loc+1:loc+nx-1], A.d[inds], A.du[loc+1:loc+nx-1], x, U)
         loc += nx
     end
-    HJB(V0, V1, R, A)
+    HJB(V0, V1, R, iszero(Ax) ? A : A + Ax) # if Ax is zero then we can use Tridiagonal exact solve
 end
 
 function invariant_value_function(
@@ -35,10 +46,9 @@ function invariant_value_function(
     G = similar(Vinit)
     fi = first(outer_indices(Vinit))
     U = Upwinder(x, view(R, :, fi...), view(G, :, fi...))
-    A = deepcopy(Aexog)
+    A = Tridiagonal(zeros(length(R) - 1), zeros(length(R)), zeros(length(R) - 1)) # this has to be zeros #TODO assertion
     function iterate!(V0, V1)
-        A .= Aexog # clean the transition matrix prior to each iteration
-        backwards_iterate!(V0, V1, x, U, R, G, A, funcs, HJB)
+        backwards_iterate!(V0, V1, x, U, R, G, A, Aexog, funcs, HJB)
     end
     fp_res = fixedpoint(iterate!, Vinit; fixedpoint_kwargs...)
     return (

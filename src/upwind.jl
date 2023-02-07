@@ -47,8 +47,9 @@ function set_drift!(U::Upwinder{T,P,RF,GF}, g::GF) where {T,P,RF,GF}
 end
 
 # Place the drift into a policy matrix
-function policy_matrix!(A, x, U::Upwinder{T,RF,GF}) where {T,RF,GF}
-    size(A) == (U.N, U.N) || throw(DimensionMismatch("incompatible A"))
+function policy_matrix!(dl, d, du, x, U::Upwinder{T}) where {T}
+    #size(A) == (U.N, U.N) || throw(DimensionMismatch("incompatible A"))
+    length(d) == U.N || throw(DimensionMismatch("incompatible A"))
     length(x) == U.N || throw(DimensionMismatch("incompatible x"))
     # First scale by the x-step and sort into forward and backward drifts
     # I want to keep the 'raw' drift in gf, so I'll use rz in place of gf
@@ -67,12 +68,20 @@ function policy_matrix!(A, x, U::Upwinder{T,RF,GF}) where {T,RF,GF}
             B[i] = Z
         end
     end
-    # Then increment the values in the matrix
-    # (which may already contain some exogenous drift components)
-    A[diagind(A, -1)] .-= @view(B[2:end])
-    A[diagind(A, 0)] .+= B .- F
-    A[diagind(A, 1)] .+= @view(F[1:end-1])
+    d[1] = -F[1]
+    du[1] = F[1]
+    @turbo for i = 2:U.N-1
+        dl[i-1] = -B[i]
+        d[i] = B[i] - F[i]
+        du[i] = F[i]
+    end
+    dl[end] = -B[end]
+    d[end] = B[end]
     return nothing
+end
+
+function policy_matrix!(A::Tridiagonal, x, U::Upwinder)
+    return policy_matrix!(A.dl, A.d, A.du, x, U)
 end
 
 # Implementation of the upwind finite-differences algorithm
@@ -92,7 +101,7 @@ function (U::Upwinder)(v, x, funcs)
     dv!(dv, v, x)
     fill_forward!(rf, gf, If, x, dv, reward, policy, drift)
     fill_backward!(rb, gb, Ib, x, dv, reward, policy, drift)
-    fill_zero!(rz, x, reward, zerodrift)
+    fill_zero!(rz, x, reward, zerodrift) # 47
     @. begin
         gf += gb
         rf += rb

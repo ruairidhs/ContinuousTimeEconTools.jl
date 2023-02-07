@@ -56,10 +56,10 @@ function test_grid(xg, HJBfuncs, ρ)
     @test maximum(abs.(Aold .- Anew)) .< 1e-12
 
     # check that if I run a backwards iteration step I get the same
-    Anew .= 0
+    Ax = spzeros(nx, nx)
     vres0, vres1 = copy(vinit), copy(vinit)
     r, g = ones(nx), ones(nx)
-    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :, ()...), view(g, :, ()...))
+    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
     for iter = 1:10
         Anew .= 0
         ContinuousTimeEconTools.backwards_iterate!(
@@ -70,6 +70,7 @@ function test_grid(xg, HJBfuncs, ρ)
             r,
             g,
             Anew,
+            Ax,
             HJBfuncs,
             ContinuousTimeEconTools.HJBIterator(
                 0.05,
@@ -136,11 +137,23 @@ function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
 
     # new
     R, G = similar(vinit), similar(vinit)
-    A = ContinuousTimeEconTools.make_exogenous_transition(nx, [Λy])
+    Ax = ContinuousTimeEconTools.make_exogenous_transition(nx, [Λy])
+    A = Tridiagonal(zeros(length(R) - 1), zeros(length(R)), zeros(length(R) - 1))
     U = ContinuousTimeEconTools.Upwinder(xg, view(R, :, 1), view(G, :, 1))
     HJB = ContinuousTimeEconTools.HJBIterator(0.05, Δt, ContinuousTimeEconTools.Implicit())
     vres0, vres1 = copy(vinit), copy(vinit)
-    ContinuousTimeEconTools.backwards_iterate!(vres0, vres1, xg, U, R, G, A, HJBfuncs, HJB)
+    ContinuousTimeEconTools.backwards_iterate!(
+        vres0,
+        vres1,
+        xg,
+        U,
+        R,
+        G,
+        A,
+        Ax,
+        HJBfuncs,
+        HJB,
+    )
 
     # old
     Aexog = kron(sparse(Λy), I(nx))
@@ -169,10 +182,10 @@ function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
     iterate_old!(vres0_old, vres1_old)
 
     # Check for equality
-    @test typeof(A) <: SparseMatrixCSC
+    @test typeof(Ax) <: SparseMatrixCSC
     @test vec(R) ≈ Rold
     @test all(Aexog .== ContinuousTimeEconTools.make_exogenous_transition(nx, [Λy]))
-    @test all((Aexog + Aendog) .≈ A)
+    @test all(Aendog .≈ A)
     @test vres0 ≈ vres0_old
 
     # and now check the invariant

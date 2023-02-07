@@ -5,7 +5,7 @@ Implements a finite differences method based on an upwind scheme to solve Hamilt
 """
 module ContinuousTimeEconTools
 
-using LinearAlgebra, SparseArrays, LoopVectorization
+using LinearAlgebra, SparseArrays, LoopVectorization, IterativeSolvers, IncompleteLU
 
 include("upwind.jl")
 include("HJB.jl")
