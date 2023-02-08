@@ -12,7 +12,7 @@ function backwards_iterate!(
     A::Tridiagonal,
     Ax,
     funcs,
-    HJB::HJBIterator,
+    HJB::HJBMethod,
 )
     reward, policy, drift, zerodrift = funcs
     nx = length(x)
@@ -39,7 +39,7 @@ function invariant_value_function(
     x,
     Aexog,
     funcs,
-    HJB::HJBIterator;
+    HJB::HJBMethod;
     fixedpoint_kwargs...,
 )
     R = similar(Vinit)

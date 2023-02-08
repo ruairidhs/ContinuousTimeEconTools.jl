@@ -5,7 +5,7 @@ struct Implicit <: HJBMethod
 end
 Implicit() = Implicit(0.10) # default constructor
 
-struct HJBIterator{T,M}
+struct HJBIterator{T,M} <: HJBMethod
     ρ::T
     Δ::T
     method::M
@@ -39,7 +39,7 @@ function (HJB::HJBIterator{T,Explicit})(v0, v1, r, A) where {T}
     return v0
 end
 
-struct HJBIteratorTerminal{T,M,N}
+struct HJBIteratorTerminal{T,M,N} <: HJBMethod
     ρ::T
     Δ::T
     method::M
