@@ -1,210 +1,129 @@
-# Test that it produces the same results as an older version of the code
-include("old_upwinding.jl")
+# Test CRRA over Cobb-Douglas utility in multiple dimensions with productivity and housing
+using LinearAlgebra
+using ContinuousTimeEconTools
+using JLD2
 
-# ==== One dimensional case ====
-# Use CRRA utility and positive interest rate
-function make_HJB_functions(θ, y)
-    @assert θ > 1.0
-    minc, maxc = 1e-4, 1e4
-    reward(_, c) = (c^(1 - θ) - 1) / (1 - θ)
-    function policy(_, dv::T) where {T}
-        dv <= zero(T) && return maxc
-        base_c = dv^(-1 / θ)
-        return max(minc, min(maxc, base_c))
-    end
-    drift(x, c) = 0.02 * x + y - c
-    zd(x) = 0.02 * x + y
-    return (reward, policy, drift, zd)
+## Model specification
+function make_grids(specs)
+    (xg = range(specs.xg[1]...; length = specs.xg[2]),
+     zg = range(specs.zg[1]...; length = specs.zg[2]),
+     hg = range(specs.hg[1]...; length = specs.hg[2]),
+    )
 end
 
-function test_grid(xg, HJBfuncs, ρ)
-    vinit = @. (1 / ρ) * log(xg + 1.0)
-    nx = length(xg)
-    r, g = similar(xg), similar(xg)
-    reward, policy, drift, zd = HJBfuncs
+# utility
+g(c, h, αh) = h ^ αh * c ^ (1 - αh)
+u(x) = log(x)
 
-    # Run the new and old methods and check the reward and transitions are equal
-    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
-    U(vinit, xg, HJBfuncs)
-    Anew = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
-    ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)
-
-    old_res = OldCode.upwind(vinit, xg, reward, drift, policy, zd)
-    Aold = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
-    OldCode.policy_matrix!(Aold, old_res)
-
-    @test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
-    @test all((old_res.GF .== 0) .== (max.(U.gf, 0) .== 0))
-    @test all((old_res.GB .== 0) .== (min.(U.gb, 0) .== 0))
-    @test maximum(abs.(Aold .- Anew)) .< 1e-12
-
-    # Run the same check but with a non-concave initial value function
-    vinit_non_concave = max.(log.(xg .+ 0.01), 0.1 .* log.(xg .+ 0.01) .- 0.2)
-
-    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
-    U(vinit_non_concave, xg, HJBfuncs)
-    Anew = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
-    ContinuousTimeEconTools.policy_matrix!(Anew, xg, U)
-
-    old_res = OldCode.upwind(vinit_non_concave, xg, reward, drift, policy, zd)
-    Aold = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
-    OldCode.policy_matrix!(Aold, old_res)
-
-    @test maximum(abs.(old_res.R ./ U.rf .- 1)) .< 1e-12
-    @test all((old_res.GF .== 0) .== (max.(U.gf, 0) .== 0))
-    @test all((old_res.GB .== 0) .== (min.(U.gb, 0) .== 0))
-    @test maximum(abs.(Aold .- Anew)) .< 1e-12
-
-    # check that if I run a backwards iteration step I get the same
-    Ax = spzeros(nx, nx)
-    vres0, vres1 = copy(vinit), copy(vinit)
-    r, g = ones(nx), ones(nx)
-    U = ContinuousTimeEconTools.Upwinder(xg, view(r, :), view(g, :))
-    for iter = 1:10
-        Anew .= 0
-        ContinuousTimeEconTools.backwards_iterate!(
-            vres0,
-            vres1,
-            xg,
-            U,
-            r,
-            g,
-            Anew,
-            Ax,
-            HJBfuncs,
-            ContinuousTimeEconTools.HJBIterator(
-                0.05,
-                10.0,
-                ContinuousTimeEconTools.Implicit(),
-            ),
-        )
-        vres1 .= vres0
-    end
-
-    vres0_old, vres1_old = copy(vinit), copy(vinit)
-    rcache = similar(vres0_old)
-    for iter = 1:10
-        or = OldCode.upwind(vres1_old, xg, reward, drift, policy, zd)
-        rcache .= or.R
-        OldCode.policy_matrix!(Aold, or)
-        vres0_old .= or.R .+ (1 / 10.0) .* vres1_old
-        ldiv!(factorize((0.05 + 1 / 10.0) * I - Aold), vres0_old)
-        vres1_old .= vres0_old
-    end
-
-    @test all(U.rf .≈ rcache)
-    @test all(Anew .≈ Aold)
-    @test all(vres1 .≈ vres1_old)
-    @test all(OldCode.extract_drift(Aold, xg) .≈ g)
+function reward(_, c, h, params) # h is housing services consumption
+    u(g(c, h, params.αh))
 end
 
-test_grid(range(0.0, 1.0, length = 100), make_HJB_functions(2.0, 1.0), 0.05)
-test_grid(
-    vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))),
-    make_HJB_functions(2.0, 1.0),
-    0.05,
-)
-
-# ===== 2d dimensional test =====
-function make_Λy(ys)
-    base = rand(length(ys), length(ys)) .* 0.1
-    base[diagind(base)] .= 0.0
-    for i in axes(base, 1)
-        base[i, i] = -sum(base[i, :])
-    end
+function policy(_, dv, params)
+    base = (1 - params.αh) / dv
     return base
 end
 
-function make_HJB_functions_2d(θ, ys)
-    @assert θ > 1.0
-    minc, maxc = 1e-4, 1e4
-    reward(_, c, _) = (c^(1 - θ) - 1) / (1 - θ)
-    function policy(_, dv::T, _) where {T}
-        dv <= zero(T) && return maxc
-        base_c = dv^(-1 / θ)
-        return max(minc, min(maxc, base_c))
-    end
-    drift(x, c, yi) = 0.02 * x + ys[yi] - c
-    zd(x, yi) = 0.02 * x + ys[yi]
-    return (reward, policy, drift, zd)
+function netincome_own(x, z, h, params)
+    (; r, y, s) = params
+    return r * x + z * y - s * h
 end
 
-function test_grid_2d(xg, ys, Λy, HJBfuncs, ρ)
-    vinit = @. (1 / ρ) * log(xg + $permutedims(ys))
-    nx, ny = length(xg), length(ys)
-    reward, policy, drift, zd = HJBfuncs
-    Δt = 10.0
-
-    # new
-    R, G = similar(vinit), similar(vinit)
-    Ax = ContinuousTimeEconTools.make_exogenous_transition(nx, [Λy])
-    A = Tridiagonal(zeros(length(R) - 1), zeros(length(R)), zeros(length(R) - 1))
-    U = ContinuousTimeEconTools.Upwinder(xg, view(R, :, 1), view(G, :, 1))
-    HJB = ContinuousTimeEconTools.HJBIterator(0.05, Δt, ContinuousTimeEconTools.Implicit())
-    vres0, vres1 = copy(vinit), copy(vinit)
-    ContinuousTimeEconTools.backwards_iterate!(
-        vres0,
-        vres1,
-        xg,
-        U,
-        R,
-        G,
-        A,
-        Ax,
-        HJBfuncs,
-        HJB,
-    )
-
-    # old
-    Aexog = kron(sparse(Λy), I(nx))
-    Aendog = kron(I(ny), sparse(Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))))
-    Rold = zeros(nx * ny)
-    vres0_old, vres1_old = copy(vinit), copy(vinit)
-    function iterate_old!(v0, v1)
-        loc = 0
-        for yi in axes(v1, 2)
-            ur = OldCode.upwind(
-                view(v1, :, yi),
-                xg,
-                (x, c) -> reward(x, c, yi),
-                (x, c) -> drift(x, c, yi),
-                (x, dv) -> policy(x, dv, yi),
-                x -> zd(x, yi),
-            )
-            inds = loc+1:loc+nx
-            Rold[inds] .= ur.R
-            OldCode.policy_matrix!(@view(Aendog[inds, inds]), ur)
-            loc += nx
-        end
-        vec(v0) .= Rold .+ (1 / Δt) .* vec(v1)
-        ldiv!(factorize((ρ + 1 / Δt) * I - (Aexog + Aendog)), vec(v0))
-    end
-    iterate_old!(vres0_old, vres1_old)
-
-    # Check for equality
-    @test typeof(Ax) <: SparseMatrixCSC
-    @test vec(R) ≈ Rold
-    @test all(Aexog .== ContinuousTimeEconTools.make_exogenous_transition(nx, [Λy]))
-    @test all(Aendog .≈ A)
-    @test vres0 ≈ vres0_old
-
-    # and now check the invariant
-    new_res =
-        ContinuousTimeEconTools.invariant_value_function(vinit, xg, Aexog, HJBfuncs, HJB)
-    for iter = 1:500
-        iterate_old!(vres0_old, vres1_old)
-        vres1_old .= vres0_old
-    end
-    @test maximum(abs.(vres1_old .- new_res.value)) .<= 1e-10
+function netincome_rent(x, z, params)
+    (; ϕ, r, ps, s, hs, y) = params
+    rent = ϕ * (r * ps + s) * hs
+    return r * x + z * y - rent
 end
 
-ys = [0.25, 0.5, 0.75, 1.0]
-Λy = make_Λy(ys)
-test_grid_2d(range(0.0, 1.0, length = 100), ys, Λy, make_HJB_functions_2d(2.0, ys), 0.05)
-test_grid_2d(
-    vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))),
-    ys,
-    Λy,
-    make_HJB_functions_2d(2.0, ys),
-    0.05,
-)
+function drift_rent(x, c, z, params)
+    return netincome_rent(x, z, params) - c
+end
+
+function drift_own(x, c, z, h, params)
+    return netincome_own(x, z, h, params) - c
+end
+
+function make_Az(zg, λ)
+    λi = λ / (length(zg) - 1)
+    Az = ones(length(zg), length(zg)) .* λi
+    Az[diagind(Az)] .= -λ
+    return Az
+end
+
+## Value function iteration
+function solve_value_own(h, grids, params, Δ)
+    (; xg, zg) = grids
+    Az = make_exogenous_transition(length(xg), [make_Az(zg, params.λ)]) # expands Az to the x grid
+    vinit = (1 / params.ρ) .* log.(xg .+ 1.0)
+    vinit = repeat(vinit, 1, length(zg)) # now an nx × nz matrix
+
+    hjb_funcs = ((x, c, zi) -> reward(x, c, h, params),
+                 (x, dv, zi) -> policy(x, dv, params),
+                 (x, c, zi) -> drift_own(x, c, exp(zg[zi]), h, params),
+                 (x, zi) -> netincome_own(x, exp(zg[zi]), h, params),
+                )
+
+    iterator = HJBIterator(params.ρ, Δ, Implicit())
+
+    res = invariant_value_function(vinit, xg, Az, hjb_funcs, iterator)
+    if res.status != :converged
+        error("VF did not converge: err: $(res.err), iters: $(res.iter)")
+    else
+        return res.value
+    end
+end
+
+function solve_value_rent(grids, params, Δ)
+    (; xg, zg) = grids
+    Az = make_exogenous_transition(length(xg), [make_Az(zg, params.λ)]) # expands Az to the x grid
+    vinit = (1 / params.ρ) .* log.(xg .+ 1.0)
+    vinit = repeat(vinit, 1, length(zg)) # now an nx × nz matrix
+
+    hjb_funcs = ((x, c, zi) -> reward(x, c, params.hs, params),
+                 (x, dv, zi) -> policy(x, dv, params),
+                 (x, c, zi) -> drift_rent(x, c, exp(zg[zi]), params),
+                 (x, zi) -> netincome_rent(x, exp(zg[zi]), params),
+                )
+
+    iterator = HJBIterator(params.ρ, Δ, Implicit())
+
+    res = invariant_value_function(vinit, xg, Az, hjb_funcs, iterator)
+    if res.status != :converged
+        error("VF did not converge: err: $(res.err), iters: $(res.iter)")
+    else
+        return res.value
+    end
+end
+
+function solve_value(grids, params, Δ)
+    own = mapreduce(h -> solve_value_own(h, grids, params, Δ), (x, y) -> cat(x, y; dims=3), grids.hg)
+    rent = solve_value_rent(grids, params, Δ)
+    return (rent = rent, own = own)
+end
+
+## Regression data generation
+GENERATE = false
+if GENERATE
+    grid_spec = (xg = ((0.0, 5.0), 100), # bounds and length
+                 zg = ((-0.2, 0.2), 5),
+                 hg = ((0.6, 0.8), 5),
+                )
+
+    params = (αh = 0.5, r = 0.02, ρ = 0.05, s = 0.6,
+              y = 1.0, ps = 5.0, pb = 5.1, ϕ = 1.2, hs = 0.40,
+              λ = 0.05 # total probability of switching productivity state
+             )
+
+    value = solve_value(make_grids(grid_spec), params, 5.0)
+    jldsave("regression_data/test_1.jld2"; grid_spec, params, value)
+end
+
+## Test against the data
+loaded = load("regression_data/test_1.jld2")
+new_value = solve_value(make_grids(loaded["grid_spec"]), loaded["params"], 5.0)
+pc_diff(u, v) = ((u ./ v) .- 1) .* 100
+
+rent_error = pc_diff(new_value.rent, loaded["value"].rent)
+@test maximum(abs, rent_error) < 0.1
+own_error = pc_diff(new_value.own, loaded["value"].own)
+@test maximum(abs, own_error) < 0.1

@@ -1,8 +1,9 @@
+# Test the 1d solution for u(c) = -(1/θ) * exp(-θc)
+# We have an analytic solution for the policy function to compare against
 function make_HJB_functions(θ, y)
     minc, maxc = 1e-4, 1e4
     reward(_, c) = -(1 / θ) * exp(-θ * c)
-    #policy(_, dv::T) where {T} = dv <= zero(T) ? maxc : max(minc, -(1 / θ) * log(dv))
-    function policy(x, dv::T) where {T}
+    function policy(_, dv::T) where {T}
         dv <= zero(T) && return maxc
         base_c = -(1 / θ) * log(dv)
         return max(minc, min(maxc, base_c))
