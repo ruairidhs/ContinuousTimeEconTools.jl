@@ -95,7 +95,7 @@ function solve_value_rent(grids, params, Δ)
     if res.status != :converged
         error("VF did not converge: err: $(res.err), iters: $(res.iter)")
     else
-        return res.value
+        return res.data.value
     end
 end
 
