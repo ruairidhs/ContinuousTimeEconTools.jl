@@ -91,4 +91,58 @@ $A_t$ used by the HJB update.
 
 ## API
 
+The main entry point is `HJBProblem`, which collects the primitives of the
+problem:
 
+```julia
+HJBProblem(ρ, reward, policy, drift, zerodrift, xgrid, Aexog)
+```
+
+where:
+
+- `reward(x, c, ...)` returns the flow payoff;
+- `policy(x, dv, ...)` returns the control implied by the derivative of the
+  value function;
+- `drift(x, c, ...)` returns the drift of the continuous state;
+- `zerodrift(x, ...)` returns the control that makes the drift zero;
+- `xgrid` is the grid for the continuous state;
+- `Aexog` is the exogenous-state transition matrix.
+
+The following example solves a simple savings problem with log utility and a
+two-state exogenous income process,
+
+$$
+\rho v(x, y) =
+\max_c \left\{\log(c) + (rx + y - c)\partial_x v(x, y)\right\}
++ \mathcal{A}_y v(x, y).
+$$
+
+```julia
+using ContinuousTimeEconTools
+
+ρ = 0.05
+r = 0.03
+xgrid = range(0.01, 2.0, length = 200)
+
+y = [0.8, 1.2]
+λ = 0.10
+Λy = [-λ λ; λ -λ]
+Aexog = make_exogenous_transition(length(xgrid), [Λy])
+
+reward(x, c, yidx) = log(c)
+
+function policy(x, dv, yidx)
+    dv <= 0 && return 1.0e4
+    return clamp(1 / dv, 1.0e-8, 1.0e4)
+end
+
+drift(x, c, yidx) = r * x + y[yidx] - c
+zerodrift(x, yidx) = r * x + y[yidx]
+
+problem = HJBProblem(ρ, reward, policy, drift, zerodrift, xgrid, Aexog)
+
+method = HJBIterator(10.0, Implicit())
+Vinit = repeat((1 / ρ) .* log.(xgrid .+ 1.0), 1, length(y))
+
+res = invariant_value_function(Vinit, problem, method)
+```
