@@ -1,5 +1,5 @@
 # Mutable because I want to be able to change rf and gf
-mutable struct Upwinder{T,P,RF<:SubArray{T,1,P},GF<:SubArray{T,1,P}}
+mutable struct Upwinder{T, P, RF <: SubArray{T, 1, P}, GF <: SubArray{T, 1, P}}
     N::Int
     rf::RF # results
     gf::GF
@@ -12,35 +12,34 @@ mutable struct Upwinder{T,P,RF<:SubArray{T,1,P},GF<:SubArray{T,1,P}}
     Is::BitVector
 end
 
-function Upwinder(x, r::SubArray, g::SubArray)
-    size(x) == size(r) || throw(DimensionMismatch("x and r have incompatible lengths"))
-    size(x) == size(g) || throw(DimensionMismatch("x and g have incompatible lengths"))
-    Base.require_one_based_indexing(x, r, g) ||
+function Upwinder(n::Int, r::SubArray, g::SubArray)
+    n == size(r) || throw(DimensionMismatch("r has incompatible length"))
+    n == size(g) || throw(DimensionMismatch("g have incompatible length"))
+    Base.require_one_based_indexing(r, g) ||
         throw(ArgumentError("array inputs must have one based indexing"))
-    n = length(x)
     return Upwinder(
         n,
         r,
         g,
-        zeros(eltype(x), n - 1),
-        similar(x),
-        similar(x),
-        similar(x),
-        BitVector(false for _ = 1:n),
-        BitVector(false for _ = 1:n),
-        BitVector(false for _ = 1:n),
+        zeros(eltype(r), n - 1),
+        zeros(eltype(r), n),
+        zeros(eltype(r), n),
+        zeros(eltype(r), n),
+        BitVector(false for _ in 1:n),
+        BitVector(false for _ in 1:n),
+        BitVector(false for _ in 1:n),
     )
 end
 
-Upwinder(x, r, g) = throw(ArgumentError("Upwinder only supports SubArrays (views)"))
+Upwinder(n, r, g) = throw(ArgumentError("Upwinder only supports SubArrays (views)"))
 
-function set_reward!(U::Upwinder{T,P,RF,GF}, r::RF) where {T,P,RF,GF}
+function set_reward!(U::Upwinder{T, P, RF, GF}, r::RF) where {T, P, RF, GF}
     length(r) == U.N || throw(DimensionMismatch())
     U.rf = r
     return nothing
 end
 
-function set_drift!(U::Upwinder{T,P,RF,GF}, g::GF) where {T,P,RF,GF}
+function set_drift!(U::Upwinder{T, P, RF, GF}, g::GF) where {T, P, RF, GF}
     length(g) == U.N || throw(DimensionMismatch())
     U.gf = g
     return nothing
@@ -56,12 +55,12 @@ function policy_matrix!(dl, d, du, x, U::Upwinder{T}) where {T}
     F, B = U.rz, U.gb # just caches to be overwritten
     drifts = U.gf
     Z = zero(T)
-    for i = 1:U.N
+    for i in 1:U.N
         if drifts[i] > Z
-            F[i] = drifts[i] / (x[i+1] - x[i])
+            F[i] = drifts[i] / (x[i + 1] - x[i])
             B[i] = Z
         elseif drifts[i] < Z
-            B[i] = drifts[i] / (x[i] - x[i-1])
+            B[i] = drifts[i] / (x[i] - x[i - 1])
             F[i] = Z
         else
             F[i] = Z
@@ -70,8 +69,8 @@ function policy_matrix!(dl, d, du, x, U::Upwinder{T}) where {T}
     end
     d[1] = -F[1]
     du[1] = F[1]
-    @turbo for i = 2:U.N-1
-        dl[i-1] = -B[i]
+    @turbo for i in 2:(U.N - 1)
+        dl[i - 1] = -B[i]
         d[i] = B[i] - F[i]
         du[i] = F[i]
     end
@@ -114,14 +113,14 @@ function (U::Upwinder)(v, x, funcs)
 end
 
 function dv!(dv, v, x)
-    for i = 1:length(dv)
-        dv[i] = (v[i+1] - v[i]) / (x[i+1] - x[i])
+    for i in 1:length(dv)
+        dv[i] = (v[i + 1] - v[i]) / (x[i + 1] - x[i])
     end
     return nothing
 end
 
 function fill_forward!(r, g, If, x, dv, reward, policy, drift)
-    inds = 1:length(x)-1
+    inds = 1:(length(x) - 1)
     for i in inds
         b = policy(x[i], dv[i])
         gi = drift(x[i], b)
@@ -137,7 +136,7 @@ end
 function fill_backward!(r, g, Ib, x, dv, reward, policy, drift)
     inds = 2:length(x)
     for i in inds
-        b = policy(x[i], dv[i-1])
+        b = policy(x[i], dv[i - 1])
         gi = drift(x[i], b)
         ri = reward(x[i], b)
         neg = gi < 0
@@ -187,10 +186,11 @@ function convex_points!(r, g, Is, x, dv, funcs)
         if isnothing(i)
             return nothing
         else
-            ri, gi = hamiltonian_point(x[i], dv[i], dv[i-1], funcs)
+            ri, gi = hamiltonian_point(x[i], dv[i], dv[i - 1], funcs)
             r[i] = ri
             g[i] = gi
             i += 1
         end
     end
+    return
 end

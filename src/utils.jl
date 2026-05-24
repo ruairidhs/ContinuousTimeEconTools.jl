@@ -1,5 +1,15 @@
 """
+    outer_indices(A::AbstractArray)
+
+Returns an iterator over all axes but the first.
+"""
+outer_indices(V::AbstractVector) = Base.Iterators.repeated((), 1)
+outer_indices(A::AbstractArray{T, N}) where {T, N} =
+    Iterators.product((axes(A, i) for i in 2:N)...)
+
+"""
     supnorm(u, v)
+
 Find the largest element-wise difference between two collections.
 """
 function supnorm(u, v)
@@ -8,6 +18,7 @@ end
 
 """
     fixedpoint(iterate!, init[, cache]; distance=supnorm, copy_func = copy!, maxiter=1000, tol=1e-10)
+
 Repeatedly call iterate!, starting with `init`, until an approximate fixed point is reached.
 
 Two iterations must be stored in order to calculate the distance between operations.
@@ -27,22 +38,22 @@ julia> fixedpoint((x1, x0) -> iterate!(x1, x0, 0.9), init, cache)
 ```
 """
 function fixedpoint(
-    iterate!,
-    init,
-    cache;
-    distance = supnorm,
-    copy_func = copy!,
-    maxiter = 1000,
-    tol = 1e-12,
-    verbose = false,
-    err_increase_tol = 0.0,
-)
+        iterate!,
+        init,
+        cache;
+        distance = supnorm,
+        copy_func = copy!,
+        maxiter = 1000,
+        tol = 1.0e-12,
+        verbose = false,
+        err_increase_tol = 0.0,
+    )
     x0, x1 = cache
     copy_func(x0, init)
     err = Inf
     err_old = Inf
 
-    for iter = 1:maxiter
+    for iter in 1:maxiter
         iterate!(x1, x0)
         err = distance(x1, x0)
         verbose && @info "Iteration: $iter; Error: $err"
