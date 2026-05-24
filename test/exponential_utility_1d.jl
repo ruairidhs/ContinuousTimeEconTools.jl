@@ -1,7 +1,11 @@
 # Test the 1d solution for u(c) = -(1/θ) * exp(-θc)
 # We have an analytic solution for the policy function to compare against
-function make_HJB_functions(θ, y)
-    minc, maxc = 1e-4, 1e4
+function get_analytic_policy(xgrid, θ, y, ρ)
+    return y .+ sqrt.(2 * (ρ / θ) * xgrid)
+end
+
+function define_problem(x, θ, y, ρ)
+    minc, maxc = 1.0e-4, 1.0e4
     reward(_, c) = -(1 / θ) * exp(-θ * c)
     function policy(_, dv::T) where {T}
         dv <= zero(T) && return maxc
@@ -10,30 +14,20 @@ function make_HJB_functions(θ, y)
     end
     drift(_, c) = y - c
     zd(_) = y
-    return (reward, policy, drift, zd)
+
+    nx = length(x)
+    Aexog = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
+    return HJBProblem(ρ, reward, policy, drift, zd, x, Aexog)
 end
 
-function get_analytic_policy(xgrid, θ, y, ρ)
-    return y .+ sqrt.(2 * (ρ / θ) * xgrid)
-end
 
-function get_numerical_policy(xgrid, θ, y, ρ, Δ, method)
-    HJBfuncs = make_HJB_functions(θ, y)
-    vinit = @. (1 / ρ) * log(xgrid .+ 1.0)
-    nx = length(xgrid)
-    A = Tridiagonal(zeros(nx - 1), zeros(nx), zeros(nx - 1))
-    res = invariant_value_function(
-        vinit,
-        xgrid,
-        A,
-        HJBfuncs,
-        HJBIterator(ρ, Δ, method);
-        maxiter = 1_000_000,
-        err_increase_tol = 1.0,
-        verbose = false,
-    )
-    res.status == :converged || error("failed to converge")
-    return map(HJBfuncs[3], xgrid, res.G)
+function get_numerical_policy(x, θ, y, ρ, Δ, method)
+    Vinit = @. (1 / ρ) * log(x .+ 1.0)
+    problem = define_problem(x, θ, y, ρ)
+    hjb_method = HJBIterator(Δ, method)
+    out = invariant_value_function(Vinit, problem, hjb_method, maxiter = 1_000_000, tol = 1.0e-12)
+    out.status == :converged || error("failed to converge")
+    return map(problem.drift, x, out.data.drift)
 end
 
 function get_spec_error(xgrid, θ, y, ρ, Δ, method)
@@ -48,8 +42,8 @@ specs = [
     (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.05),
     (range(0.0, 1.0, length = 500), 2.0, 1.0, 0.05),
     (range(0.0, 1.0, length = 1000), 2.0, 1.0, 0.05),
-    (vcat([0.0], exp.(range(log(1e-6), log(1), length = 100))), 2.0, 1.0, 0.05), # irregular grid
-    (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.10), # different parameters
+    (vcat([0.0], exp.(range(log(1.0e-6), log(1), length = 100))), 2.0, 1.0, 0.05), # irregular grid
+    (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.1), # different parameters
     (range(0.0, 1.0, length = 100), 2.0, 1.0, 0.01),
     (range(0.0, 1.0, length = 100), 2.0, 10.0, 0.05),
     (range(0.0, 1.0, length = 100), 8.0, 1.0, 0.05),

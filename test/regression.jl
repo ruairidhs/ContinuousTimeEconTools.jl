@@ -5,18 +5,19 @@ using JLD2
 
 ## Model specification
 function make_grids(specs)
-    (xg = range(specs.xg[1]...; length = specs.xg[2]),
-     zg = range(specs.zg[1]...; length = specs.zg[2]),
-     hg = range(specs.hg[1]...; length = specs.hg[2]),
+    return (
+        xg = range(specs.xg[1]...; length = specs.xg[2]),
+        zg = range(specs.zg[1]...; length = specs.zg[2]),
+        hg = range(specs.hg[1]...; length = specs.hg[2]),
     )
 end
 
 # utility
-g(c, h, αh) = h ^ αh * c ^ (1 - αh)
+g(c, h, αh) = h^αh * c^(1 - αh)
 u(x) = log(x)
 
 function reward(_, c, h, params) # h is housing services consumption
-    u(g(c, h, params.αh))
+    return u(g(c, h, params.αh))
 end
 
 function policy(_, dv, params)
@@ -57,19 +58,21 @@ function solve_value_own(h, grids, params, Δ)
     vinit = (1 / params.ρ) .* log.(xg .+ 1.0)
     vinit = repeat(vinit, 1, length(zg)) # now an nx × nz matrix
 
-    hjb_funcs = ((x, c, zi) -> reward(x, c, h, params),
-                 (x, dv, zi) -> policy(x, dv, params),
-                 (x, c, zi) -> drift_own(x, c, exp(zg[zi]), h, params),
-                 (x, zi) -> netincome_own(x, exp(zg[zi]), h, params),
-                )
+    hjb_funcs = (
+        (x, c, zi) -> reward(x, c, h, params),
+        (x, dv, zi) -> policy(x, dv, params),
+        (x, c, zi) -> drift_own(x, c, exp(zg[zi]), h, params),
+        (x, zi) -> netincome_own(x, exp(zg[zi]), h, params),
+    )
 
-    iterator = HJBIterator(params.ρ, Δ, Implicit())
+    problem = HJBProblem(params.ρ, hjb_funcs..., xg, Az)
+    hjb_method = HJBIterator(Δ, Implicit())
+    res = invariant_value_function(vinit, problem, hjb_method)
 
-    res = invariant_value_function(vinit, xg, Az, hjb_funcs, iterator)
     if res.status != :converged
         error("VF did not converge: err: $(res.err), iters: $(res.iter)")
     else
-        return res.value
+        return res.data.value
     end
 end
 
@@ -79,15 +82,16 @@ function solve_value_rent(grids, params, Δ)
     vinit = (1 / params.ρ) .* log.(xg .+ 1.0)
     vinit = repeat(vinit, 1, length(zg)) # now an nx × nz matrix
 
-    hjb_funcs = ((x, c, zi) -> reward(x, c, params.hs, params),
-                 (x, dv, zi) -> policy(x, dv, params),
-                 (x, c, zi) -> drift_rent(x, c, exp(zg[zi]), params),
-                 (x, zi) -> netincome_rent(x, exp(zg[zi]), params),
-                )
+    hjb_funcs = (
+        (x, c, zi) -> reward(x, c, params.hs, params),
+        (x, dv, zi) -> policy(x, dv, params),
+        (x, c, zi) -> drift_rent(x, c, exp(zg[zi]), params),
+        (x, zi) -> netincome_rent(x, exp(zg[zi]), params),
+    )
 
-    iterator = HJBIterator(params.ρ, Δ, Implicit())
-
-    res = invariant_value_function(vinit, xg, Az, hjb_funcs, iterator)
+    problem = HJBProblem(params.ρ, hjb_funcs..., xg, Az)
+    hjb_method = HJBIterator(Δ, Implicit())
+    res = invariant_value_function(vinit, problem, hjb_method)
     if res.status != :converged
         error("VF did not converge: err: $(res.err), iters: $(res.iter)")
     else
@@ -96,7 +100,7 @@ function solve_value_rent(grids, params, Δ)
 end
 
 function solve_value(grids, params, Δ)
-    own = mapreduce(h -> solve_value_own(h, grids, params, Δ), (x, y) -> cat(x, y; dims=3), grids.hg)
+    own = mapreduce(h -> solve_value_own(h, grids, params, Δ), (x, y) -> cat(x, y; dims = 3), grids.hg)
     rent = solve_value_rent(grids, params, Δ)
     return (rent = rent, own = own)
 end
@@ -104,15 +108,17 @@ end
 ## Regression data generation
 GENERATE = false
 if GENERATE
-    grid_spec = (xg = ((0.0, 5.0), 100), # bounds and length
-                 zg = ((-0.2, 0.2), 5),
-                 hg = ((0.6, 0.8), 5),
-                )
+    grid_spec = (
+        xg = ((0.0, 5.0), 100), # bounds and length
+        zg = ((-0.2, 0.2), 5),
+        hg = ((0.6, 0.8), 5),
+    )
 
-    params = (αh = 0.5, r = 0.02, ρ = 0.05, s = 0.6,
-              y = 1.0, ps = 5.0, pb = 5.1, ϕ = 1.2, hs = 0.40,
-              λ = 0.05 # total probability of switching productivity state
-             )
+    params = (
+        αh = 0.5, r = 0.02, ρ = 0.05, s = 0.6,
+        y = 1.0, ps = 5.0, pb = 5.1, ϕ = 1.2, hs = 0.4,
+        λ = 0.05, # total probability of switching productivity state
+    )
 
     value = solve_value(make_grids(grid_spec), params, 5.0)
     jldsave("regression_data/test_1.jld2"; grid_spec, params, value)

@@ -7,17 +7,11 @@ module ContinuousTimeEconTools
 
 using LinearAlgebra, SparseArrays, LoopVectorization, IterativeSolvers, IncompleteLU
 
-include("upwind.jl")
-include("HJB.jl")
 include("utils.jl")
-include("dimensions.jl")
+include("upwind.jl")
+include("hjb.jl")
+include("solvers.jl")
 
-export backwards_iterate!,
-    invariant_value_function,
-    make_exogenous_transition,
-    Upwinder,
-    HJBIterator,
-    Explicit,
-    Implicit
+export HJBData, HJBProblem, HJBIterator, Implicit, Explicit, invariant_value_function, make_exogenous_transition
 
 end # module

@@ -13,8 +13,8 @@ mutable struct Upwinder{T, P, RF <: SubArray{T, 1, P}, GF <: SubArray{T, 1, P}}
 end
 
 function Upwinder(n::Int, r::SubArray, g::SubArray)
-    n == size(r) || throw(DimensionMismatch("r has incompatible length"))
-    n == size(g) || throw(DimensionMismatch("g have incompatible length"))
+    n == length(r) || throw(DimensionMismatch("r has incompatible length"))
+    n == length(g) || throw(DimensionMismatch("g have incompatible length"))
     Base.require_one_based_indexing(r, g) ||
         throw(ArgumentError("array inputs must have one based indexing"))
     return Upwinder(

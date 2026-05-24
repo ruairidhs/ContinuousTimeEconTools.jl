@@ -1,69 +1,67 @@
-abstract type HJBMethod end
-struct Explicit <: HJBMethod end
-struct Implicit <: HJBMethod
-    τ::Float64 # Incomplete LU factorization coefficient
-end
-Implicit() = Implicit(0.1) # default constructor
+"""
+    HJBProblem
 
-struct HJBIterator{T, M} <: HJBMethod
-    Δ::T
-    method::M
-end
-
-function step!(v0, v1, r, A, ρ, iterator::HJBIterator{T, Implicit}) where {T}
-    v0, v1, r = vec(v0), vec(v1), vec(r)
-    b = r .+ (1 / iterator.Δ) .* v1 # if doing iterative solution the allocations are irrelevant for runtime
-    Q = (ρ + 1 / iterator.Δ) * I - A
-    p = ilu(Q, τ = iterator.method.τ)
-    v0 .= v1 # use v1 as an initial guess but don't want to overwrite it
-    IterativeSolvers.bicgstabl!(v0, Q, b; Pl = p)
-    return v0
+Defines the parameters of a HJB problem.
+"""
+struct HJBProblem{T <: Real, F0, F1, F2, F3, V <: AbstractVector, M <: AbstractMatrix}
+    ρ::T
+    reward::F0
+    policy::F1
+    drift::F2
+    zerodrift::F3
+    x::V
+    Aexog::M
 end
 
-function step!(v0, v1, r, A::Tridiagonal, ρ, iterator::HJBIterator{T, Implicit}) where {T}
-    # one-dimensional case: can use fast tridiagonal solve
-    v0, v1, r = vec(v0), vec(v1), vec(r)
-    v0 .= r .+ (1 / iterator.Δ) .* v1
-    ldiv!(factorize((ρ + 1 / iterator.Δ) * I - A), v0)
-    return v0
+"""
+    HJBData
+
+A data cache containing all arrays required to compute a HJB iteration.
+Can be re-used across iterations.
+"""
+struct HJBData{U <: Upwinder, V <: AbstractArray, T <: Tridiagonal}
+    upwinder::U
+    value::V
+    reward::V
+    drift::V
+    transition::T
 end
 
-function step!(v0, v1, r, A, ρ, iterator::HJBIterator{T, Explicit}) where {T}
-    v0, v1, r = vec(v0), vec(v1), vec(r)
-    v0 .= r
-    mul!(v0, (ρ * I - A), v1, 1, -1)
-    # now v0 contains (1/Δ)(v1 - v)
-    v0 .*= -iterator.Δ
-    v0 .+= v1
-    return v0
+function HJBData(V::AbstractArray)
+    N = length(V)
+    value = similar(V)
+    reward = similar(V)
+    drift = similar(V)
+
+    fi = first(outer_indices(V))
+    upwinder = Upwinder(size(V, 1), view(reward, :, fi...), view(drift, :, fi...))
+    transition = Tridiagonal(zeros(N - 1), zeros(N), zeros(N - 1))
+    return HJBData(upwinder, value, reward, drift, transition)
 end
 
-function step!(data::HJBData, V::AbstractArray, problem::HJBProblem, iterator::HJBIterator)
-    return step!(data.value, V, data.reward, iszero(problem.Aexog) ? data.transition : data.transition + problem.Aexog, iterator)
+function solve_reward_transition!(
+        data::HJBData, V::AbstractArray, problem::HJBProblem
+    )
+    nx = length(problem.x)
+    # Use upwinding to produce the reward vector and endogenous transition matrix
+    loc = 0 # tracker for the flat indices in the transition matrix
+    for inds in outer_indices(V)
+        get_view(a) = view(a, :, inds...)
+        # Specialize each function to this value of the exogenous state
+        funcs = (
+            (x, c) -> problem.reward(x, c, inds...),
+            (x, dv) -> problem.policy(x, dv, inds...),
+            (x, c) -> problem.drift(x, c, inds...),
+            x -> problem.zerodrift(x, inds...),
+        )
+        # Run upwinding on the correct slice of data.reward and data.drift
+        set_reward!(data.upwinder, get_view(data.reward))
+        set_drift!(data.upwinder, get_view(data.drift))
+        data.upwinder(get_view(V), problem.x, funcs)
+        # Update the endogenous state transition matrix
+        inds = (loc + 1):(loc + nx)
+        @views policy_matrix!(data.transition.dl[(loc + 1):(loc + nx - 1)], data.transition.d[inds], data.transition.du[(loc + 1):(loc + nx - 1)], problem.x, data.upwinder)
+        loc += nx
+    end
+    return data
 end
-
-# struct HJBIteratorTerminal{T, M, N} <: HJBMethod
-#     ρ::T
-#     Δ::T
-#     method::M
-#     VT::Array{T, N} # terminal value function
-#     λ::T # arrival rate of transitioning to the terminal value function
-# end
-#
-# function (HJB::HJBIteratorTerminal{T, Implicit, N})(v0, v1, r, A) where {T, N}
-#     v0, v1, vt, r = vec(v0), vec(v1), vec(HJB.VT), vec(r)
-#     # saves allocations compared to just setting r = r + λ .* vt
-#     v0 .= r .+ (1 / HJB.Δ) .* v1 .+ HJB.λ .* vt
-#     ldiv!(factorize((HJB.ρ + HJB.λ + 1 / HJB.Δ) * I - A), v0)
-#     return v0
-# end
-#
-# function (HJB::HJBIteratorTerminal{T, Explicit, N})(v0, v1, r, A) where {T, N}
-#     v0, v1, vt, r = vec(v0), vec(v1), vec(HJB.VT), vec(r)
-#     v0 .= r .+ HJB.λ .* vt
-#     mul!(v0, ((HJB.ρ + HJB.λ) * I - A), v1, 1, -1)
-#     # now v0 contains (1/Δ)(v1 - v)
-#     v0 .*= -HJB.Δ
-#     v0 .+= v1
-#     return v0
-# end
