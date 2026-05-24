@@ -72,7 +72,7 @@ function solve_value_own(h, grids, params, Δ)
     if res.status != :converged
         error("VF did not converge: err: $(res.err), iters: $(res.iter)")
     else
-        return res.data.value
+        return res.value
     end
 end
 
@@ -95,7 +95,7 @@ function solve_value_rent(grids, params, Δ)
     if res.status != :converged
         error("VF did not converge: err: $(res.err), iters: $(res.iter)")
     else
-        return res.data.value
+        return res.value
     end
 end
 

@@ -5,6 +5,15 @@ struct Implicit <: HJBMethod
 end
 Implicit() = Implicit(0.1) # default constructor
 
+"""
+    HJBIterator(Δ, method)
+
+Defines the solution method for evaluating V_{t-Δ} given V_{t}, A_{t} and R_{t}.
+
+Arguments:
+- `Δ`: time step
+- `method = [Implicit, Explicit]`: whether to use implicit or explicit solution method.
+"""
 struct HJBIterator{T, M} <: HJBMethod
     Δ::T
     method::M
@@ -38,11 +47,16 @@ function step!(v0, v1, r, A, ρ, iterator::HJBIterator{T, Explicit}) where {T}
     return v0
 end
 
-function step!(data::HJBData, V::AbstractArray, problem::HJBProblem, iterator::HJBIterator)
+function step!(V0::AbstractArray, V1::AbstractArray, data::HJBData, problem::HJBProblem, iterator::HJBIterator)
     A = iszero(problem.Aexog) ? data.transition : data.transition + problem.Aexog
-    return step!(data.value, V, data.reward, A, problem.ρ, iterator)
+    return step!(V0, V1, data.reward, A, problem.ρ, iterator)
 end
 
+"""
+    invariant_value_function(Vinit, problem, hjb_method)
+
+Solve for the invariant value function of `problem`.
+"""
 function invariant_value_function(
         Vinit::AbstractArray,
         problem::HJBProblem,
@@ -53,49 +67,22 @@ function invariant_value_function(
     )
 
     data = HJBData(Vinit)
-    function iterate!(V)
-        solve_reward_transition!(data, V, problem)
-        step!(data, V, problem, hjb_method)
-        return data.value
+    function iterate!(V0, V1)
+        solve_reward_transition!(data, V1, problem)
+        step!(V0, V1, data, problem, hjb_method)
+        return V0
     end
 
-    V = deepcopy(Vinit)
+    V0, V1 = deepcopy(Vinit), deepcopy(Vinit)
     err = Inf
     iter = 0
     while (err > tol) && (iter <= maxiter)
-        iterate!(V)
-        err = supnorm(data.value, V)
-        V .= data.value
+        iterate!(V0, V1)
+        err = supnorm(V0, V1)
+        copy!(V1, V0)
         verbose && @info "Iteration: $iter; Error: $err"
         iter += 1
     end
     status = err <= tol ? :converged : :max_iterations
-    return (data = data, iter = iter, err = err, status = status)
+    return (value = V0, data = data, iter = iter, err = err, status = status)
 end
-
-
-# struct HJBIteratorTerminal{T, M, N} <: HJBMethod
-#     ρ::T
-#     Δ::T
-#     method::M
-#     VT::Array{T, N} # terminal value function
-#     λ::T # arrival rate of transitioning to the terminal value function
-# end
-#
-# function (HJB::HJBIteratorTerminal{T, Implicit, N})(v0, v1, r, A) where {T, N}
-#     v0, v1, vt, r = vec(v0), vec(v1), vec(HJB.VT), vec(r)
-#     # saves allocations compared to just setting r = r + λ .* vt
-#     v0 .= r .+ (1 / HJB.Δ) .* v1 .+ HJB.λ .* vt
-#     ldiv!(factorize((HJB.ρ + HJB.λ + 1 / HJB.Δ) * I - A), v0)
-#     return v0
-# end
-#
-# function (HJB::HJBIteratorTerminal{T, Explicit, N})(v0, v1, r, A) where {T, N}
-#     v0, v1, vt, r = vec(v0), vec(v1), vec(HJB.VT), vec(r)
-#     v0 .= r .+ HJB.λ .* vt
-#     mul!(v0, ((HJB.ρ + HJB.λ) * I - A), v1, 1, -1)
-#     # now v0 contains (1/Δ)(v1 - v)
-#     v0 .*= -HJB.Δ
-#     v0 .+= v1
-#     return v0
-# end

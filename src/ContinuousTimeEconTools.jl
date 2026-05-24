@@ -12,6 +12,6 @@ include("upwind.jl")
 include("hjb.jl")
 include("solvers.jl")
 
-export HJBData, HJBProblem, HJBIterator, Implicit, Explicit, invariant_value_function, make_exogenous_transition
+export HJBData, HJBProblem, HJBIterator, Implicit, Explicit, invariant_value_function, make_exogenous_transition, solve_reward_transition!
 
 end # module

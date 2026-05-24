@@ -16,6 +16,16 @@ function supnorm(u, v)
     return maximum(abs.(u .- v))
 end
 
+"""
+    make_exogenous_transition(nx, Λs)
+
+Build an exogenous state transition matrix.
+
+# Details
+
+Given an endogenous state length `nx` and exogenous transition matrices `Λs`,
+compute the overall exogenous transition matrix.
+"""
 function make_exogenous_transition(nx, Λs)
     return foldl(
         (acc, M) -> kron(I(size(M, 1)), acc) + kron(sparse(M), I(size(acc, 1))),

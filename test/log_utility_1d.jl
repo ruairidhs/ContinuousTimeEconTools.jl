@@ -22,7 +22,7 @@ function get_numeric_value(xgrid, ρ, r, Δ, method)
     res = invariant_value_function(
         Vinit, problem, hjb_method, maxiter = 1_000_000, tol = 1.0e-12
     )
-    return res.data.value
+    return res.value
 end
 
 function get_spec_error(spec)
